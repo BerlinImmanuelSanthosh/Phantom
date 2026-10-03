@@ -50,7 +50,7 @@ function Settings() {
         <Field label="Hospital / ambulance number"><input className={inputCls} value={f.hospital_number} onChange={(e) => setF({ ...f, hospital_number: e.target.value })} /></Field>
         <div className="flex items-end gap-3">
           <PrimaryButton onClick={save}><Save size={18} /> Save</PrimaryButton>
-          <GhostButton onClick={async () => { await supabase.auth.signOut(); nav({ to: "/auth" }); }}><LogOut size={18} /> Sign out</GhostButton>
+          <GhostButton onClick={async () => { await supabase.auth.signOut(); nav({ to: "/" }); }}><LogOut size={18} /> Start over</GhostButton>
         </div>
       </GlassCard>
     </motion.div>

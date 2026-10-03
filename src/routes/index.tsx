@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { Logo, MeshBackground } from "@/components/phantom/ui";
@@ -29,7 +30,7 @@ function Splash() {
   }, []);
   useEffect(() => {
     if (!done || loading) return;
-    if (!session) return void nav({ to: "/", replace: true });
+    if (!session) return void supabase.auth.signInAnonymously();
     if (profile.isLoading) return;
     nav({ to: profile.data?.onboarding_complete ? "/dashboard" : "/onboarding", replace: true });
   }, [done, loading, session, profile.isLoading, profile.data, nav]);
