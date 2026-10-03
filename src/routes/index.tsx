@@ -29,7 +29,7 @@ function Splash() {
   }, []);
   useEffect(() => {
     if (!done || loading) return;
-    if (!session) return void nav({ to: "/auth", replace: true });
+    if (!session) return void nav({ to: "/", replace: true });
     if (profile.isLoading) return;
     nav({ to: profile.data?.onboarding_complete ? "/dashboard" : "/onboarding", replace: true });
   }, [done, loading, session, profile.isLoading, profile.data, nav]);
