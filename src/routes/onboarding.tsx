@@ -77,7 +77,7 @@ function Onboarding() {
   });
 
   useEffect(() => {
-    if (!loading && !session) nav({ to: "/auth", replace: true });
+    if (!loading && !session) nav({ to: "/", replace: true });
     if (profile.data?.onboarding_complete) nav({ to: "/dashboard", replace: true });
     if (profile.data?.full_name && !f.full_name) setF((s) => ({ ...s, full_name: profile.data!.full_name! }));
   }, [loading, session, profile.data, nav, f.full_name]);

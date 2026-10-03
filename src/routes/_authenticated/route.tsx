@@ -28,7 +28,7 @@ function Shell() {
   const profile = useProfile();
 
   useEffect(() => {
-    if (!loading && !session) nav({ to: "/auth", replace: true });
+    if (!loading && !session) nav({ to: "/", replace: true });
     else if (profile.data && !profile.data.onboarding_complete) nav({ to: "/onboarding", replace: true });
   }, [loading, session, profile.data, nav]);
 

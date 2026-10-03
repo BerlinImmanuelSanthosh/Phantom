@@ -148,10 +148,44 @@ export type Database = {
         }
         Relationships: []
       }
+      notifications: {
+        Row: {
+          body: string | null
+          created_at: string
+          dedupe_key: string | null
+          id: string
+          kind: string
+          read: boolean
+          title: string
+          user_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          dedupe_key?: string | null
+          id?: string
+          kind: string
+          read?: boolean
+          title: string
+          user_id?: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          dedupe_key?: string | null
+          id?: string
+          kind?: string
+          read?: boolean
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           age: number | null
           allergies: string[] | null
+          blood_group: string | null
           bp_diastolic: number | null
           bp_systolic: number | null
           conditions: string[] | null
@@ -176,6 +210,7 @@ export type Database = {
         Insert: {
           age?: number | null
           allergies?: string[] | null
+          blood_group?: string | null
           bp_diastolic?: number | null
           bp_systolic?: number | null
           conditions?: string[] | null
@@ -200,6 +235,7 @@ export type Database = {
         Update: {
           age?: number | null
           allergies?: string[] | null
+          blood_group?: string | null
           bp_diastolic?: number | null
           bp_systolic?: number | null
           conditions?: string[] | null
