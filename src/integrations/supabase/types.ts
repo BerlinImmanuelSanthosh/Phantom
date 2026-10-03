@@ -14,7 +14,245 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      chat_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          role: string
+          user_id?: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      dose_logs: {
+        Row: {
+          id: string
+          medicine_id: string
+          scheduled_at: string
+          status: string
+          taken_at: string | null
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          medicine_id: string
+          scheduled_at: string
+          status?: string
+          taken_at?: string | null
+          user_id?: string
+        }
+        Update: {
+          id?: string
+          medicine_id?: string
+          scheduled_at?: string
+          status?: string
+          taken_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dose_logs_medicine_id_fkey"
+            columns: ["medicine_id"]
+            isOneToOne: false
+            referencedRelation: "medicines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meals: {
+        Row: {
+          calories: number
+          eaten_at: string
+          id: string
+          name: string
+          user_id: string
+        }
+        Insert: {
+          calories?: number
+          eaten_at?: string
+          id?: string
+          name: string
+          user_id?: string
+        }
+        Update: {
+          calories?: number
+          eaten_at?: string
+          id?: string
+          name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      medicines: {
+        Row: {
+          created_at: string
+          dosage: string | null
+          end_date: string | null
+          form: string | null
+          id: string
+          meal_relation: string | null
+          name: string
+          notes: string | null
+          source: string | null
+          specific_times: string[] | null
+          start_date: string | null
+          times_per_day: number | null
+          total_stock: number | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          dosage?: string | null
+          end_date?: string | null
+          form?: string | null
+          id?: string
+          meal_relation?: string | null
+          name: string
+          notes?: string | null
+          source?: string | null
+          specific_times?: string[] | null
+          start_date?: string | null
+          times_per_day?: number | null
+          total_stock?: number | null
+          user_id?: string
+        }
+        Update: {
+          created_at?: string
+          dosage?: string | null
+          end_date?: string | null
+          form?: string | null
+          id?: string
+          meal_relation?: string | null
+          name?: string
+          notes?: string | null
+          source?: string | null
+          specific_times?: string[] | null
+          start_date?: string | null
+          times_per_day?: number | null
+          total_stock?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          age: number | null
+          allergies: string[] | null
+          bp_diastolic: number | null
+          bp_systolic: number | null
+          conditions: string[] | null
+          created_at: string
+          diet: string | null
+          emergency_contacts: Json | null
+          full_name: string | null
+          gender: string | null
+          goal: string | null
+          height_cm: number | null
+          hospital_number: string | null
+          id: string
+          insight: Json | null
+          insight_at: string | null
+          onboarding_complete: boolean
+          sugar_fasting: number | null
+          updated_at: string
+          water_date: string | null
+          water_ml: number | null
+          weight_kg: number | null
+        }
+        Insert: {
+          age?: number | null
+          allergies?: string[] | null
+          bp_diastolic?: number | null
+          bp_systolic?: number | null
+          conditions?: string[] | null
+          created_at?: string
+          diet?: string | null
+          emergency_contacts?: Json | null
+          full_name?: string | null
+          gender?: string | null
+          goal?: string | null
+          height_cm?: number | null
+          hospital_number?: string | null
+          id: string
+          insight?: Json | null
+          insight_at?: string | null
+          onboarding_complete?: boolean
+          sugar_fasting?: number | null
+          updated_at?: string
+          water_date?: string | null
+          water_ml?: number | null
+          weight_kg?: number | null
+        }
+        Update: {
+          age?: number | null
+          allergies?: string[] | null
+          bp_diastolic?: number | null
+          bp_systolic?: number | null
+          conditions?: string[] | null
+          created_at?: string
+          diet?: string | null
+          emergency_contacts?: Json | null
+          full_name?: string | null
+          gender?: string | null
+          goal?: string | null
+          height_cm?: number | null
+          hospital_number?: string | null
+          id?: string
+          insight?: Json | null
+          insight_at?: string | null
+          onboarding_complete?: boolean
+          sugar_fasting?: number | null
+          updated_at?: string
+          water_date?: string | null
+          water_ml?: number | null
+          weight_kg?: number | null
+        }
+        Relationships: []
+      }
+      vitals: {
+        Row: {
+          bp_diastolic: number | null
+          bp_systolic: number | null
+          id: string
+          recorded_at: string
+          sugar: number | null
+          user_id: string
+          weight_kg: number | null
+        }
+        Insert: {
+          bp_diastolic?: number | null
+          bp_systolic?: number | null
+          id?: string
+          recorded_at?: string
+          sugar?: number | null
+          user_id?: string
+          weight_kg?: number | null
+        }
+        Update: {
+          bp_diastolic?: number | null
+          bp_systolic?: number | null
+          id?: string
+          recorded_at?: string
+          sugar?: number | null
+          user_id?: string
+          weight_kg?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
