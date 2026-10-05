@@ -250,9 +250,29 @@ function Onboarding() {
 
           <div className="mt-8 flex justify-between gap-3">
             <GhostButton type="button" onClick={back} disabled={step === 0}><ArrowLeft size={18} /> Back</GhostButton>
-            <PrimaryButton type="button" onClick={next} disabled={saving} className="pulse-glow">
-              {step === 5 ? (saving ? "Saving…" : f.meds.length ? "Finish" : "Skip & finish") : "Next"} <ArrowRight size={18} />
-            </PrimaryButton>
+            <div className="flex items-center gap-2">
+              {step === 2 && (
+                <GhostButton
+                  type="button"
+                  onClick={() => {
+                    setErrors({});
+                    setF((s) => ({
+                      ...s,
+                      sugar_fasting: s.sugar_fasting || "95",
+                      bp_systolic: s.bp_systolic || "120",
+                      bp_diastolic: s.bp_diastolic || "80",
+                    }));
+                    setDir(1);
+                    setStep(step + 1);
+                  }}
+                >
+                  Skip
+                </GhostButton>
+              )}
+              <PrimaryButton type="button" onClick={next} disabled={saving} className="pulse-glow">
+                {step === 5 ? (saving ? "Saving…" : f.meds.length ? "Finish" : "Skip & finish") : "Next"} <ArrowRight size={18} />
+              </PrimaryButton>
+            </div>
           </div>
         </div>
       </div>

@@ -1,0 +1,8 @@
+Step 1 :Open 2 cmd
+Step 2: go to phantom in the md
+step 3 : install packages (1 time only)
+step 4 in the same run npm run dev (everytime)
+Step 5: open the other cmd and go to backend of phantom 
+Step6: open venv run code venv\Scripts\activate
+Step 7: run uvicorn backend.main:app --reload --port 8000
+step 8 : if error comes for package not installed run pip install -r "requirements.txt" then after installing run the above code
