@@ -4,8 +4,7 @@ import { createLovableAiGatewayRunIdFetch } from "./run-id.server";
 
 export const PHANTOM_MODEL = "openai/gpt-6-astra";
 
-/** Streams a Responses call server-side and returns the final text. */
-export async function generateTextStreamed(messages: ModelMessage[], system?: string) {
+function run(messages: ModelMessage[], system?: string, signal?: AbortSignal) {
   const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) throw new Error("AI is not configured");
   const runIdFetch = createLovableAiGatewayRunIdFetch();
@@ -15,10 +14,11 @@ export async function generateTextStreamed(messages: ModelMessage[], system?: st
     headers: { "Lovable-API-Key": apiKey, "X-Lovable-AIG-SDK": "vercel-ai-sdk" },
     fetch: runIdFetch.fetch,
   });
-  const result = streamText({
+  return streamText({
     model: provider.responses(PHANTOM_MODEL),
-    system,
+    ...(system ? { system } : {}),
     messages,
+    ...(signal ? { abortSignal: signal } : {}),
     providerOptions: {
       openai: {
         store: false,
@@ -29,5 +29,20 @@ export async function generateTextStreamed(messages: ModelMessage[], system?: st
       },
     },
   });
-  return await result.text;
+}
+
+/** Streams a Responses call server-side and returns the final text. */
+export async function generateTextStreamed(messages: ModelMessage[], system?: string) {
+  return await run(messages, system).text;
+}
+
+/** Returns a plain-text streaming Response. */
+export function streamTextResponse(messages: ModelMessage[], system: string, signal?: AbortSignal) {
+  return run(messages, system, signal).toTextStreamResponse();
+}
+
+export function extractJson<T>(text: string): T {
+  const s = text.search(/[[{]/);
+  const e = Math.max(text.lastIndexOf("}"), text.lastIndexOf("]"));
+  return JSON.parse(text.slice(s, e + 1)) as T;
 }
