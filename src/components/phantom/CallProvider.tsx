@@ -21,7 +21,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [muted, setMuted] = useState(false);
   const [speaker, setSpeaker] = useState(false);
   const [sheet, setSheet] = useState(false);
-  const unsub = useRef<() => void>();
+  const unsub = useRef<(() => void) | undefined>(undefined);
 
   const call = useCallback(async (name: string, phone: string) => {
     setSheet(false);
@@ -126,7 +126,7 @@ function CallBtn({ children, label, onClick, active }: { children: ReactNode; la
 export function SosButton() {
   const { sos } = useCall();
   const [holding, setHolding] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const start = () => {
     setHolding(true);
     timer.current = setTimeout(() => {
