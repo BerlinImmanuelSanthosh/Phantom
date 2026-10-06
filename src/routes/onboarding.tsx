@@ -37,7 +37,7 @@ type Form = {
 
 const num = (min: number, max: number, label: string) =>
   z.coerce.number({ invalid_type_error: `${label} is required` }).min(min, `${label} looks too low`).max(max, `${label} looks too high`);
-const phone = z.string().regex(/^[+\d][\d\s-]{5,}$/, "Enter a valid phone number");
+const phone = z.string().trim().regex(/^[+\d][\d\s-]{2,}$/, "Enter a valid phone number");
 
 const schemas = [
   z.object({ full_name: z.string().trim().min(2, "Enter your name"), age: num(1, 120, "Age"), gender: z.string().min(1, "Choose one") }),

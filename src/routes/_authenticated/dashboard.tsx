@@ -11,6 +11,7 @@ import { useMedicines, useProfile } from "@/hooks/useProfile";
 import { CountUp, GlassCard, GhostButton, PrimaryButton, Ring, Skeleton, StatusChip, inputCls, Field } from "@/components/phantom/ui";
 import { bmi, bmiCategory, bpStatus, calorieTarget, fallbackInsight, healthScore, sugarStatus } from "@/lib/health";
 import { generateInsight } from "@/lib/insight.functions";
+import { useCall } from "@/components/phantom/CallProvider";
 import { stagger } from "@/lib/motion";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
@@ -103,7 +104,7 @@ function Dashboard() {
   const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   return (
-    <motion.div variants={stagger} initial="initial" animate="animate" className="space-y-5">
+    <motion.div variants={stagger} initial="initial" animate="animate" className="space-y-5 pb-20">
       <header className="flex items-center gap-4">
         <motion.div animate={{ y: [0, -3, 0] }} transition={{ duration: 3, repeat: Infinity }} className="flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary glow-cyan">
           <User size={26} />
@@ -172,7 +173,9 @@ function Dashboard() {
       <div className="grid gap-5 lg:grid-cols-3">
         <GlassCard className="lg:col-span-2">
           <h2 className="mb-3 text-lg font-bold">Trends</h2>
-          {vitals.isLoading ? <Skeleton className="h-56" /> : (
+          {vitals.isLoading ? <Skeleton className="h-56" /> : chart.length < 2 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">Log your vitals on another day to see your trends here.</p>
+          ) : (
             <div className="grid gap-4 sm:grid-cols-3">
               {([["weight", "Weight"], ["sugar", "Sugar"], ["sys", "Systolic BP"]] as const).map(([k, l]) => (
                 <div key={k}>
@@ -221,7 +224,7 @@ function Dashboard() {
           <Quick to="/chat" icon={MessageCircle} label="Chat" />
           <Quick to="/food" icon={ScanLine} label="Scan fridge" />
           <Quick to="/tablets" icon={Pill} label="Add tablet" />
-          <Quick to="/chat" icon={Siren} label="Emergency" />
+          <EmergencyQuick />
         </div>
       </GlassCard>
 
@@ -286,5 +289,14 @@ function LogVitals({ open, onOpenChange, defaults }: { open: boolean; onOpenChan
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function EmergencyQuick() {
+  const { openSheet } = useCall();
+  return (
+    <motion.button whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }} onClick={openSheet} className="flex flex-col items-center gap-2 rounded-2xl border border-destructive/40 bg-destructive/5 p-4 font-medium">
+      <Siren size={24} /> Emergency
+    </motion.button>
   );
 }
