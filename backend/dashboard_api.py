@@ -6,15 +6,12 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from groq import Groq
 
-# Load environment variables
-load_dotenv()
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+try:
+    from backend.config import GROQ_MODEL_DASHBOARD as MODEL_NAME, GROQ_API_KEY_DASHBOARD
+except ModuleNotFoundError:
+    from config import GROQ_MODEL_DASHBOARD as MODEL_NAME, GROQ_API_KEY_DASHBOARD
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard Mode"])
-
-# Retrieve Dashboard specific Groq API Key
-GROQ_API_KEY_DASHBOARD = os.getenv("GROQ_API_KEY_DASHBOARD") or os.getenv("GROQ_API_KEY")
-MODEL_NAME = os.getenv("GROQ_MODEL_DASHBOARD", "llama-3.3-70b-versatile")
 
 def get_groq_client() -> Groq:
     if not GROQ_API_KEY_DASHBOARD or "your_groq" in GROQ_API_KEY_DASHBOARD:
@@ -135,3 +132,143 @@ Generate a JSON object strictly matching this schema:
                 "Monitor your blood sugar and pressure regularly."
             ]
         )
+
+class CardInsightRequest(BaseModel):
+    card_type: str
+    metric_label: str
+    current_value: str
+    status: Optional[str] = None
+    age: Optional[int] = 30
+    gender: Optional[str] = "unspecified"
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    bmi: Optional[float] = None
+    bmi_category: Optional[str] = None
+    sugar: Optional[float] = None
+    bp_systolic: Optional[int] = None
+    bp_diastolic: Optional[int] = None
+    goal: Optional[str] = None
+    diet: Optional[str] = None
+    conditions: List[str] = Field(default_factory=list)
+
+class CardInsightResponse(BaseModel):
+    card_type: str
+    metric_label: str
+    headline: str
+    tips: List[str]
+
+import re
+
+def safe_parse_json(text: str) -> dict:
+    if not text:
+        return {}
+    start = text.find('{')
+    end = text.rfind('}')
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(text[start:end+1])
+        except Exception:
+            pass
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    # Regex fallback for truncated or partial JSON responses
+    res: dict = {}
+    headline_match = re.search(r'"headline"\s*:\s*"([^"]+)"', text)
+    if headline_match:
+        res["headline"] = headline_match.group(1)
+
+    tips_match = re.search(r'"tips"\s*:\s*\[(.*)', text, re.DOTALL)
+    if tips_match:
+        raw_tips = re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"', tips_match.group(1))
+        valid_tips = [t for t in raw_tips if t.strip() and t not in ("headline", "tips")]
+        if valid_tips:
+            res["tips"] = valid_tips[:3]
+
+    return res
+
+@router.post("/card-insight", response_model=CardInsightResponse)
+def generate_card_insight(data: CardInsightRequest):
+    """
+    Generate focused AI betterment insights for a specific clicked dashboard card.
+    Uses MODEL_NAME from config (configured via GROQ_MODEL_DASHBOARD in backend/.env).
+    """
+    print(f"[card-insight] ▶ Received: metric={data.metric_label} | value={data.current_value} | status={data.status}")
+    client = get_groq_client()
+    system_prompt = (
+        "You are Phantom AI, a careful health assistant. Provide concise, medically sound betterment advice for a specific health card metric. "
+        "Output ONLY a raw JSON object with keys 'headline' and 'tips' (array of 3 short strings). Do not write reasoning or markdown."
+    )
+    profile_lines = [
+        f"Age: {data.age}, Gender: {data.gender}",
+        f"Height: {data.height_cm} cm, Weight: {data.weight_kg} kg" if data.height_cm and data.weight_kg else None,
+        f"BMI: {data.bmi} ({data.bmi_category})" if data.bmi else None,
+        f"Fasting blood sugar: {data.sugar} mg/dL" if data.sugar else None,
+        f"Blood pressure: {data.bp_systolic}/{data.bp_diastolic} mmHg" if data.bp_systolic and data.bp_diastolic else None,
+        f"Goal: {data.goal}, Diet: {data.diet}" if data.goal or data.diet else None,
+        f"Conditions: {', '.join(data.conditions)}" if data.conditions else None,
+    ]
+    profile_context = ". ".join(line for line in profile_lines if line)
+
+    user_prompt = f"""Full health profile: {profile_context}.
+
+The user clicked on the '{data.metric_label}' card.
+Current reading: {data.current_value}. Status: {data.status or 'Normal'}.
+
+Give 3 personalised, specific improvement tips for THIS metric only, based on the full profile above.
+Output raw JSON matching this schema:
+{{
+  "headline": "<max 6 words specific to this metric and profile>",
+  "tips": ["<personalised tip 1, max 12 words>", "<personalised tip 2, max 12 words>", "<personalised tip 3, max 12 words>"]
+}}
+"""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+
+    content = ""
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=0.3,
+            max_tokens=1000,
+        )
+        content = response.choices[0].message.content or ""
+    except Exception as e:
+        print(f"[card-insight] Notice: json_object mode failed ({e}), retrying standard completion...")
+        try:
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                temperature=0.3,
+                max_tokens=1000,
+            )
+            content = response.choices[0].message.content or ""
+        except Exception as e2:
+            print(f"[card-insight] ❌ Error in backend generation: {e2}")
+
+    print(f"[card-insight] Groq raw response: {content}")
+    parsed = safe_parse_json(content)
+
+    headline = parsed.get("headline") or f"Betterment for {data.metric_label}"
+    tips = parsed.get("tips")
+    if not isinstance(tips, list) or len(tips) == 0:
+        tips = [
+            f"Keep tracking your {data.metric_label} regularly.",
+            "Maintain healthy hydration and sleep habits.",
+            "Stay active with daily physical movement."
+        ]
+
+    return CardInsightResponse(
+        card_type=data.card_type,
+        metric_label=data.metric_label,
+        headline=headline,
+        tips=tips[:3]
+    )
+

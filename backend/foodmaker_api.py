@@ -6,16 +6,12 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from groq import Groq
 
-# Load environment variables
-load_dotenv()
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+try:
+    from backend.config import GROQ_MODEL_FOODMAKER as VISION_MODEL, GROQ_MODEL_DASHBOARD as TEXT_MODEL, GROQ_API_KEY_FOODMAKER
+except ModuleNotFoundError:
+    from config import GROQ_MODEL_FOODMAKER as VISION_MODEL, GROQ_MODEL_DASHBOARD as TEXT_MODEL, GROQ_API_KEY_FOODMAKER
 
 router = APIRouter(prefix="/foodmaker", tags=["Foodmaker Mode"])
-
-# Retrieve Foodmaker specific Groq API Key
-GROQ_API_KEY_FOODMAKER = os.getenv("GROQ_API_KEY_FOODMAKER") or os.getenv("GROQ_API_KEY")
-VISION_MODEL = os.getenv("GROQ_MODEL_FOODMAKER", "llama-3.2-11b-vision-preview")
-TEXT_MODEL = os.getenv("GROQ_MODEL_DASHBOARD", "llama-3.3-70b-versatile")
 
 def get_groq_client() -> Groq:
     if not GROQ_API_KEY_FOODMAKER or "your_groq" in GROQ_API_KEY_FOODMAKER:

@@ -7,15 +7,12 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from groq import Groq
 
-# Load environment variables
-load_dotenv()
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+try:
+    from backend.config import GROQ_MODEL_CHAT as MODEL_NAME, GROQ_API_KEY_CHAT
+except ModuleNotFoundError:
+    from config import GROQ_MODEL_CHAT as MODEL_NAME, GROQ_API_KEY_CHAT
 
 router = APIRouter(prefix="/chat", tags=["Chat Mode"])
-
-# Retrieve Chat specific Groq API Key
-GROQ_API_KEY_CHAT = os.getenv("GROQ_API_KEY_CHAT") or os.getenv("GROQ_API_KEY")
-MODEL_NAME = os.getenv("GROQ_MODEL_CHAT", "llama-3.3-70b-versatile")
 
 def get_groq_client() -> Groq:
     if not GROQ_API_KEY_CHAT or "your_groq" in GROQ_API_KEY_CHAT:

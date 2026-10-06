@@ -31,7 +31,7 @@ export function Logo({ size = 40 }: { size?: number }) {
   );
 }
 
-export function GlassCard({ children, className, hover = true }: { children: ReactNode; className?: string; hover?: boolean }) {
+export function GlassCard({ children, className, hover = true, onClick }: { children: ReactNode; className?: string; hover?: boolean; onClick?: () => void }) {
   return (
     <motion.div
       variants={item}
@@ -40,6 +40,7 @@ export function GlassCard({ children, className, hover = true }: { children: Rea
         y: { type: "spring", stiffness: 300, damping: 25 },
         boxShadow: { duration: 0.25, ease },
       }}
+      onClick={onClick}
       className={cn("glass p-5", className)}
     >
       {children}

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Activity, Droplet, HeartPulse, MessageCircle, Pill, Plus, RefreshCw, Scale, ScanLine, Siren, Sparkles, User, Flame } from "lucide-react";
+import { Activity, Droplet, HeartPulse, MessageCircle, Pill, Plus, RefreshCw, Scale, ScanLine, Siren, Sparkles, User, Flame, Pencil, Minus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useMedicines, useProfile } from "@/hooks/useProfile";
@@ -13,6 +13,8 @@ import { bmi, bmiCategory, bpStatus, calorieTarget, fallbackInsight, healthScore
 import { generateInsight } from "@/lib/insight.functions";
 import { useCall } from "@/components/phantom/CallProvider";
 import { stagger } from "@/lib/motion";
+import { fetchCardInsight, type CardInsightData } from "@/lib/card-insight.functions";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -56,8 +58,56 @@ function Dashboard() {
   const meds = useMedicines();
   const kcal = useMealsToday();
   const gen = useServerFn(generateInsight);
+  const getCardInsightFn = useServerFn(fetchCardInsight);
   const [refreshing, setRefreshing] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
+  const [selectedCard, setSelectedCard] = useState<{ card_type: string; metric_label: string; current_value: string; status?: string } | null>(null);
+  const [cardInsight, setCardInsight] = useState<CardInsightData | null>(null);
+  const [loadingCardInsight, setLoadingCardInsight] = useState(false);
+
+  const [editingCard, setEditingCard] = useState<{ card_type: string; metric_label: string } | null>(null);
+
+  async function openCardInsight(info: { card_type: string; metric_label: string; current_value: string; status?: string }) {
+    setSelectedCard(info);
+    setCardInsight(null);
+    setLoadingCardInsight(true);
+    try {
+      const res = await getCardInsightFn({
+        data: {
+          card_type: info.card_type,
+          metric_label: info.metric_label,
+          current_value: info.current_value,
+          status: info.status,
+          age: p?.age ?? 30,
+          gender: p?.gender ?? "unspecified",
+          height_cm: p?.height_cm,
+          weight_kg: p?.weight_kg,
+          bmi: bmi(p?.height_cm ?? 170, p?.weight_kg ?? 70),
+          bmi_category: bmiCategory(bmi(p?.height_cm ?? 170, p?.weight_kg ?? 70)).label,
+          sugar: p?.sugar_fasting,
+          bp_systolic: p?.bp_systolic,
+          bp_diastolic: p?.bp_diastolic,
+          goal: p?.goal ?? undefined,
+          diet: p?.diet ?? undefined,
+          conditions: p?.conditions ?? [],
+        }
+      });
+      setCardInsight(res);
+    } catch {
+      setCardInsight({
+        card_type: info.card_type,
+        metric_label: info.metric_label,
+        headline: `Optimizing your ${info.metric_label}`,
+        tips: [
+          `Keep tracking your ${info.metric_label} levels regularly.`,
+          "Maintain balanced daily sleep and hydration habits.",
+          "Consult your doctor if you notice unusual variations."
+        ]
+      });
+    }
+    setLoadingCardInsight(false);
+  }
+
   if (!p) return null;
 
   const latest = vitals.data?.at(-1);
@@ -97,6 +147,24 @@ function Dashboard() {
     qc.invalidateQueries({ queryKey: ["profile"] });
   }
 
+  async function addCalories(amount: number) {
+    const current = kcal.data ?? 0;
+    const next = Math.max(0, current + amount);
+    qc.setQueryData(["meals-today"], next);
+
+    const { data: authData } = await supabase.auth.getUser();
+    if (authData?.user) {
+      supabase.from("meals").insert({
+        user_id: authData.user.id,
+        calories: amount,
+        name: amount > 0 ? "Quick calorie log" : "Calorie adjustment",
+        eaten_at: new Date().toISOString(),
+      }).then(({ error }) => {
+        if (error) console.error("[addCalories] Error:", error);
+      });
+    }
+  }
+
   const chart = (vitals.data ?? []).map((v) => ({
     d: new Date(v.recorded_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
     weight: Number(v.weight_kg),
@@ -120,7 +188,7 @@ function Dashboard() {
       </header>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        <GlassCard className="flex flex-col items-center justify-center lg:row-span-2">
+        <GlassCard className="flex flex-col items-center justify-center lg:row-span-2 cursor-pointer" onClick={() => openCardInsight({ card_type: "health_score", metric_label: "Health Score", current_value: String(score) })}>
           <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-muted-foreground">Health Score</p>
           <Ring value={score} size={200} stroke={14}>
             <span className="font-display text-5xl font-bold"><CountUp value={score} /></span>
@@ -152,25 +220,29 @@ function Dashboard() {
         </GlassCard>
 
         <div className="grid grid-cols-2 gap-5 lg:col-span-2 lg:grid-cols-3">
-          <Stat icon={Scale} label="BMI" value={b} decimals={1} sub={cat.label} status={cat.status} />
-          <Stat icon={Droplet} label="Blood sugar" value={sugar} unit="mg/dL" status={sugarStatus(sugar)} />
-          <Stat icon={HeartPulse} label="Blood pressure" value={sys} unit={`/${dia}`} status={bpStatus(sys, dia)} />
+          <Stat icon={Scale} label="BMI" value={b} decimals={1} sub={cat.label} status={cat.status} onClick={() => openCardInsight({ card_type: "bmi", metric_label: "BMI", current_value: `${b.toFixed(1)} (${cat.label})`, status: cat.status })} />
+          <Stat icon={Droplet} label="Blood sugar" value={sugar} unit="mg/dL" status={sugarStatus(sugar)} onClick={() => openCardInsight({ card_type: "blood_sugar", metric_label: "Blood sugar", current_value: `${sugar} mg/dL`, status: sugarStatus(sugar) })} />
+          <Stat icon={HeartPulse} label="Blood pressure" value={sys} unit={`/${dia}`} status={bpStatus(sys, dia)} onClick={() => openCardInsight({ card_type: "blood_pressure", metric_label: "Blood pressure", current_value: `${sys}/${dia} mmHg`, status: bpStatus(sys, dia) })} />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
-        <Stat icon={Activity} label="Weight" value={weight} decimals={1} unit="kg" />
-        <Stat icon={User} label="Age" value={p.age ?? 0} unit="yrs" />
-        <GlassCard>
+        <Stat icon={Activity} label="Weight" value={weight} decimals={1} unit="kg" onClick={() => openCardInsight({ card_type: "weight", metric_label: "Weight", current_value: `${weight} kg` })} />
+        <Stat icon={User} label="Age" value={p.age ?? 0} unit="yrs" onClick={() => openCardInsight({ card_type: "age", metric_label: "Age", current_value: `${p.age ?? 0} years` })} />
+        <GlassCard className="cursor-pointer" onClick={() => openCardInsight({ card_type: "next_tablet", metric_label: "Next tablet", current_value: nextDose ? `${nextDose.m.name} at ${nextDose.t}` : "No tablets added" })}>
           <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground"><Pill size={18} /> Next tablet</div>
           {meds.isLoading ? <Skeleton className="mt-3 h-10" /> : nextDose ? (
             <><p className="mt-2 font-display text-xl font-bold">{nextDose.m.name}</p><p className="text-sm text-muted-foreground">{nextDose.t} · {nextDose.m.dosage}</p></>
           ) : <p className="mt-2 text-sm text-muted-foreground">No tablets added</p>}
         </GlassCard>
-        <GlassCard>
+        <GlassCard className="cursor-pointer" onClick={() => openCardInsight({ card_type: "calories", metric_label: "Calories", current_value: `${kcal.data ?? 0} / ${target} kcal` })}>
           <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground"><Flame size={18} /> Calories</div>
-          <p className="mt-2 font-display text-xl font-bold"><CountUp value={kcal.data ?? 0} /> <span className="text-sm font-medium text-muted-foreground">/ {target}</span></p>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted"><motion.div className="h-full bg-phantom" initial={{ width: 0 }} animate={{ width: `${Math.min(100, ((kcal.data ?? 0) / target) * 100)}%` }} transition={{ duration: 1 }} /></div>
+          <p className="mt-2 font-display text-xl font-bold"><CountUp value={kcal.data ?? 0} duration={0.3} /> <span className="text-sm font-medium text-muted-foreground">/ {target}</span></p>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted"><motion.div className="h-full bg-phantom" initial={{ width: 0 }} animate={{ width: `${Math.min(100, ((kcal.data ?? 0) / target) * 100)}%` }} transition={{ duration: 0.3, ease: "easeOut" }} /></div>
+          <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
+            <GhostButton className="px-2.5 py-1 text-xs" onClick={() => addCalories(100)}>+100</GhostButton>
+            <GhostButton className="px-2.5 py-1 text-xs" onClick={() => addCalories(-100)}>−</GhostButton>
+          </div>
         </GlassCard>
       </div>
 
@@ -236,13 +308,54 @@ function Dashboard() {
         <Plus size={20} /> Log vitals
       </motion.button>
       <LogVitals open={logOpen} onOpenChange={setLogOpen} defaults={{ weight, sugar, sys, dia }} />
+      <EditCardSheet open={!!editingCard} onOpenChange={(o) => { if (!o) setEditingCard(null); }} card={editingCard} profile={p} defaults={{ weight, sugar, sys, dia }} />
+
+      <Dialog open={!!selectedCard} onOpenChange={(o) => { if (!o) { setSelectedCard(null); setCardInsight(null); } }}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader className="flex flex-row items-center justify-between gap-2 pr-6">
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <Sparkles size={18} />
+              AI Insight — {selectedCard?.metric_label}
+            </DialogTitle>
+            <GhostButton
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-primary hover:opacity-80 border-none outline-none focus:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:outline-none shadow-none ring-0 cursor-pointer"
+              onClick={() => {
+                const targetCard = selectedCard;
+                setSelectedCard(null);
+                setCardInsight(null);
+                if (targetCard) setEditingCard(targetCard);
+              }}
+            >
+              <Pencil size={14} className="text-primary" /> Edit
+            </GhostButton>
+          </DialogHeader>
+          {loadingCardInsight ? (
+            <div className="space-y-3 pt-2">
+              <div className="shimmer h-5 rounded-xl" />
+              <div className="shimmer h-4 rounded-xl w-4/5" />
+              <div className="shimmer h-4 rounded-xl w-3/5" />
+            </div>
+          ) : cardInsight ? (
+            <div className="space-y-4 pt-1">
+              <span className="inline-block rounded-full bg-primary px-4 py-1.5 text-sm font-bold uppercase tracking-wider text-primary-foreground">{cardInsight.headline}</span>
+              <ul className="space-y-2">
+                {cardInsight.tips.map((tip, i) => (
+                  <motion.li key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }} className="flex gap-3 text-sm">
+                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-cyan" />{tip}
+                  </motion.li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 }
 
-function Stat({ icon: Icon, label, value, unit, sub, status, decimals = 0 }: { icon: typeof Scale; label: string; value: number; unit?: string; sub?: string; status?: "normal" | "watch" | "high"; decimals?: number }) {
+function Stat({ icon: Icon, label, value, unit, sub, status, decimals = 0, onClick }: { icon: typeof Scale; label: string; value: number; unit?: string; sub?: string; status?: "normal" | "watch" | "high"; decimals?: number; onClick?: () => void }) {
   return (
-    <GlassCard>
+    <GlassCard onClick={onClick} className={onClick ? "cursor-pointer" : undefined}>
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground"><Icon size={18} /> {label}</span>
         {status && <StatusChip status={status} />}
@@ -260,6 +373,150 @@ function Quick({ to, icon: Icon, label }: { to: "/chat" | "/food" | "/tablets"; 
         <Icon size={24} /> {label}
       </Link>
     </motion.div>
+  );
+}
+
+function EditCardSheet({
+  card,
+  open,
+  onOpenChange,
+  profile,
+  defaults
+}: {
+  card: { card_type: string; metric_label: string } | null;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  profile: any;
+  defaults: { weight: number; sugar: number; sys: number; dia: number };
+}) {
+  const qc = useQueryClient();
+  const [val, setVal] = useState("");
+  const [val2, setVal2] = useState("");
+
+  if (!card) return null;
+
+  async function save() {
+    if (!profile) return;
+    try {
+      if (card?.card_type === "weight") {
+        const w = +val || defaults.weight;
+        await supabase.from("vitals").insert({ weight_kg: w, sugar: defaults.sugar, bp_systolic: defaults.sys, bp_diastolic: defaults.dia });
+        await supabase.from("profiles").update({ weight_kg: w }).eq("id", profile.id);
+        toast.success("Weight updated");
+      } else if (card?.card_type === "blood_sugar") {
+        const s = +val || defaults.sugar;
+        await supabase.from("vitals").insert({ weight_kg: defaults.weight, sugar: s, bp_systolic: defaults.sys, bp_diastolic: defaults.dia });
+        await supabase.from("profiles").update({ sugar_fasting: s }).eq("id", profile.id);
+        toast.success("Blood sugar updated");
+      } else if (card?.card_type === "blood_pressure") {
+        const sys = +val || defaults.sys;
+        const dia = +val2 || defaults.dia;
+        await supabase.from("vitals").insert({ weight_kg: defaults.weight, sugar: defaults.sugar, bp_systolic: sys, bp_diastolic: dia });
+        await supabase.from("profiles").update({ bp_systolic: sys, bp_diastolic: dia }).eq("id", profile.id);
+        toast.success("Blood pressure updated");
+      } else if (card?.card_type === "bmi") {
+        const w = +val || defaults.weight;
+        const h = +val2 || profile.height_cm || 170;
+        await supabase.from("vitals").insert({ weight_kg: w, sugar: defaults.sugar, bp_systolic: defaults.sys, bp_diastolic: defaults.dia });
+        await supabase.from("profiles").update({ weight_kg: w, height_cm: h }).eq("id", profile.id);
+        toast.success("BMI parameters updated");
+      } else if (card?.card_type === "age") {
+        await supabase.from("profiles").update({ age: +val || profile.age }).eq("id", profile.id);
+        toast.success("Age updated");
+      } else if (card?.card_type === "calories") {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user) {
+          await supabase.from("meals").insert({
+            user_id: authData.user.id,
+            calories: +val || 250,
+            name: "Manual entry",
+            eaten_at: new Date().toISOString()
+          });
+        }
+        toast.success("Calories logged");
+      } else {
+        await supabase.from("vitals").insert({
+          weight_kg: +val || defaults.weight,
+          sugar: +val2 || defaults.sugar,
+          bp_systolic: defaults.sys,
+          bp_diastolic: defaults.dia
+        });
+        toast.success("Vitals updated");
+      }
+      setVal("");
+      setVal2("");
+      qc.invalidateQueries({ queryKey: ["vitals"] });
+      qc.invalidateQueries({ queryKey: ["profile"] });
+      qc.invalidateQueries({ queryKey: ["meals-today"] });
+      onOpenChange(false);
+    } catch (err: any) {
+      toast.error("Failed to save: " + err.message);
+    }
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="bottom" className="mx-auto max-w-lg rounded-t-3xl">
+        <SheetHeader>
+          <SheetTitle>Edit {card.metric_label}</SheetTitle>
+        </SheetHeader>
+        <div className="space-y-4 p-4">
+          {card.card_type === "weight" && (
+            <Field label="Weight (kg)">
+              <input className={inputCls} type="number" placeholder={String(defaults.weight)} value={val} onChange={(e) => setVal(e.target.value)} />
+            </Field>
+          )}
+          {card.card_type === "blood_sugar" && (
+            <Field label="Blood Sugar (mg/dL)">
+              <input className={inputCls} type="number" placeholder={String(defaults.sugar)} value={val} onChange={(e) => setVal(e.target.value)} />
+            </Field>
+          )}
+          {card.card_type === "blood_pressure" && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Systolic (mmHg)">
+                <input className={inputCls} type="number" placeholder={String(defaults.sys)} value={val} onChange={(e) => setVal(e.target.value)} />
+              </Field>
+              <Field label="Diastolic (mmHg)">
+                <input className={inputCls} type="number" placeholder={String(defaults.dia)} value={val2} onChange={(e) => setVal2(e.target.value)} />
+              </Field>
+            </div>
+          )}
+          {card.card_type === "bmi" && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Weight (kg)">
+                <input className={inputCls} type="number" placeholder={String(defaults.weight)} value={val} onChange={(e) => setVal(e.target.value)} />
+              </Field>
+              <Field label="Height (cm)">
+                <input className={inputCls} type="number" placeholder={String(profile?.height_cm ?? 170)} value={val2} onChange={(e) => setVal2(e.target.value)} />
+              </Field>
+            </div>
+          )}
+          {card.card_type === "age" && (
+            <Field label="Age (years)">
+              <input className={inputCls} type="number" placeholder={String(profile?.age ?? 30)} value={val} onChange={(e) => setVal(e.target.value)} />
+            </Field>
+          )}
+          {card.card_type === "calories" && (
+            <Field label="Log Meal Calories (kcal)">
+              <input className={inputCls} type="number" placeholder="250" value={val} onChange={(e) => setVal(e.target.value)} />
+            </Field>
+          )}
+          {card.card_type !== "weight" && card.card_type !== "blood_sugar" && card.card_type !== "blood_pressure" && card.card_type !== "bmi" && card.card_type !== "age" && card.card_type !== "calories" && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Weight (kg)">
+                <input className={inputCls} type="number" placeholder={String(defaults.weight)} value={val} onChange={(e) => setVal(e.target.value)} />
+              </Field>
+              <Field label="Sugar (mg/dL)">
+                <input className={inputCls} type="number" placeholder={String(defaults.sugar)} value={val2} onChange={(e) => setVal2(e.target.value)} />
+              </Field>
+            </div>
+          )}
+          <PrimaryButton className="w-full" onClick={save}>
+            Save {card.metric_label}
+          </PrimaryButton>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 

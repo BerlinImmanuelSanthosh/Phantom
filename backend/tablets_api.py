@@ -6,16 +6,12 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from groq import Groq
 
-# Load environment variables
-load_dotenv()
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+try:
+    from backend.config import GROQ_MODEL_TABLETS as VISION_MODEL, GROQ_MODEL_DASHBOARD as TEXT_MODEL, GROQ_API_KEY_TABLETS
+except ModuleNotFoundError:
+    from config import GROQ_MODEL_TABLETS as VISION_MODEL, GROQ_MODEL_DASHBOARD as TEXT_MODEL, GROQ_API_KEY_TABLETS
 
 router = APIRouter(prefix="/tablets", tags=["Tablets Mode"])
-
-# Retrieve Tablets specific Groq API Key
-GROQ_API_KEY_TABLETS = os.getenv("GROQ_API_KEY_TABLETS") or os.getenv("GROQ_API_KEY")
-VISION_MODEL = os.getenv("GROQ_MODEL_TABLETS", "llama-3.2-11b-vision-preview")
-TEXT_MODEL = os.getenv("GROQ_MODEL_DASHBOARD", "llama-3.3-70b-versatile")
 
 def get_groq_client() -> Groq:
     if not GROQ_API_KEY_TABLETS or "your_groq" in GROQ_API_KEY_TABLETS:
