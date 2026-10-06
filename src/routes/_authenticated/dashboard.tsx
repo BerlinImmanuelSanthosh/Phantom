@@ -89,7 +89,11 @@ function Dashboard() {
     setRefreshing(false);
   }
   async function addWater(ml: number) {
-    await supabase.from("profiles").update({ water_ml: Math.max(0, water + ml), water_date: today }).eq("id", p!.id);
+    const next = Math.max(0, water + ml);
+    const updateCache = (old: any) => (old ? { ...old, water_ml: next, water_date: today } : old);
+    qc.setQueryData(["profile", p!.id], updateCache);
+    qc.setQueryData(["profile"], updateCache);
+    await supabase.from("profiles").update({ water_ml: next, water_date: today }).eq("id", p!.id);
     qc.invalidateQueries({ queryKey: ["profile"] });
   }
 
@@ -202,12 +206,12 @@ function Dashboard() {
           <h2 className="text-lg font-bold">Water</h2>
           <div className="mt-3 flex items-center gap-4">
             <div className="relative h-32 w-20 overflow-hidden rounded-b-3xl rounded-t-lg border-2 border-cyan/60 bg-glass">
-              <motion.div className="absolute inset-x-0 bottom-0 bg-cyan/60" animate={{ height: `${Math.min(100, (water / 2500) * 100)}%` }} transition={{ type: "spring", stiffness: 60, damping: 14 }}>
-                <motion.div className="absolute -top-2 left-0 h-4 w-[200%] rounded-[45%] bg-cyan/60" animate={{ x: ["0%", "-50%"] }} transition={{ duration: 3, repeat: Infinity, ease: "linear" }} />
+              <motion.div className="absolute inset-x-0 bottom-0 bg-cyan/60" animate={{ height: `${Math.min(100, (water / 2500) * 100)}%` }} transition={{ duration: 0.3, ease: "easeOut" }}>
+                <motion.div className="absolute -top-2 left-0 h-4 w-[200%] rounded-[45%] bg-cyan/60" animate={{ x: ["0%", "-50%"] }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }} />
               </motion.div>
             </div>
             <div>
-              <p className="font-display text-2xl font-bold"><CountUp value={water} /> ml</p>
+              <p className="font-display text-2xl font-bold"><CountUp value={water} duration={0.3} /> ml</p>
               <p className="text-xs text-muted-foreground">Goal 2500 ml</p>
               <div className="mt-3 flex gap-2">
                 <GhostButton className="px-3 py-2 text-sm" onClick={() => addWater(250)}>+250</GhostButton>

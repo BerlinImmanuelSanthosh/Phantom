@@ -1,0 +1,6 @@
+# Backend environment and python artifacts
+.env
+.env.*
+venv/
+__pycache__/
+*.pyc

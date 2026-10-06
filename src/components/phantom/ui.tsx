@@ -36,7 +36,10 @@ export function GlassCard({ children, className, hover = true }: { children: Rea
     <motion.div
       variants={item}
       whileHover={hover ? { y: -4, boxShadow: "var(--shadow-lift)" } : undefined}
-      transition={{ type: "spring", stiffness: 300, damping: 24 }}
+      transition={{
+        y: { type: "spring", stiffness: 300, damping: 25 },
+        boxShadow: { duration: 0.25, ease },
+      }}
       className={cn("glass p-5", className)}
     >
       {children}
@@ -44,14 +47,14 @@ export function GlassCard({ children, className, hover = true }: { children: Rea
   );
 }
 
-export function CountUp({ value, decimals = 0, className }: { value: number; decimals?: number; className?: string }) {
+export function CountUp({ value, decimals = 0, duration = 1.2, className }: { value: number; decimals?: number; duration?: number; className?: string }) {
   const reduce = useReducedMotion();
   const mv = useMotionValue(reduce ? value : 0);
   const text = useTransform(mv, (v) => v.toFixed(decimals));
   useEffect(() => {
-    const c = animate(mv, value, { duration: reduce ? 0 : 1.2, ease });
+    const c = animate(mv, value, { duration: reduce ? 0 : duration, ease });
     return () => c.stop();
-  }, [value, reduce, mv]);
+  }, [value, reduce, mv, duration]);
   return <motion.span className={className}>{text}</motion.span>;
 }
 
