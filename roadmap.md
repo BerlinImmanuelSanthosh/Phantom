@@ -8,4 +8,4 @@
 - [x] Chat: streaming AI, history, prescription scan, call UI, emergency detection, voice
 - [x] Food Maker: fridge photo detection, recipes, cooking mode, food chat, log meal
 - [x] Notifications (reminders, low stock, course ending, missed dose) + notification centre
-- [ ] Extras: Phantom Orb, body silhouette, SOS hold, streak badges, Medical ID QR, Cmd+K, PWA
+- [ ] Extras (SOS done; remaining:: Phantom Orb, body silhouette, SOS hold, streak badges, Medical ID QR, Cmd+K, PWA

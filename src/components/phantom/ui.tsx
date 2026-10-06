@@ -76,7 +76,7 @@ export function Ring({ value, size = 160, stroke = 12, children }: { value: numb
           strokeWidth={stroke}
           strokeLinecap="round"
           initial={{ pathLength: 0 }}
-          animate={{ pathLength: Math.max(0.001, Math.min(1, value / 100)) }}
+          animate={{ pathLength: Math.max(0.001, Math.min(1, value / 100)), opacity: value > 0 ? 1 : 0 }}
           transition={{ duration: 1.4, ease }}
         />
       </svg>
