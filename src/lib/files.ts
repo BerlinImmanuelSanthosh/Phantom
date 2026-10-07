@@ -18,9 +18,45 @@ export async function fileToPayload(file: File): Promise<{ dataUrl: string; medi
   return { dataUrl: c.toDataURL("image/jpeg", 0.85), mediaType: "image/jpeg" };
 }
 
-export async function streamChat(body: unknown, onChunk: (full: string) => void, signal?: AbortSignal) {
+export async function streamChat(body: Record<string, unknown>, onChunk: (full: string) => void, signal?: AbortSignal) {
   const { supabase } = await import("@/integrations/supabase/client");
   const { data } = await supabase.auth.getSession();
+
+  // For food mode, try the dedicated foodmaker backend chat endpoint first
+  if (body["mode"] === "food") {
+    const backendUrls = ["http://127.0.0.1:8000", "http://localhost:8000"];
+    const foodBody = {
+      messages: body["messages"] ?? [],
+      ingredients: body["ingredients"] ?? [],
+      profile_context: body["profile_context"] ?? "",
+    };
+    for (const baseUrl of backendUrls) {
+      try {
+        const res = await fetch(`${baseUrl}/api/foodmaker/chat/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(foodBody),
+          ...(signal ? { signal } : {}),
+        });
+        if (res.ok && res.body) {
+          const reader = res.body.getReader();
+          const dec = new TextDecoder();
+          let full = "";
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            full += dec.decode(value, { stream: true });
+            onChunk(full);
+          }
+          return full;
+        }
+      } catch {
+        // backend not available, fall through to TanStack route
+      }
+    }
+  }
+
+  // Default: all modes (including food fallback) go through TanStack /api/chat
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
@@ -41,5 +77,6 @@ export async function streamChat(body: unknown, onChunk: (full: string) => void,
   }
   return full;
 }
+
 
 export const EMERGENCY_RE = /(chest pain|can'?t breathe|cannot breathe|breathless|shortness of breath|heart attack|stroke|fainted|unconscious|severe bleeding|suicid|kill myself|seizure)/i;
