@@ -36,7 +36,8 @@ class PrescriptionResponse(BaseModel):
     medicines: List[ScannedMed] = Field(default_factory=list)
 
 class ScanPrescriptionRequest(BaseModel):
-    data_url: str = Field(description="Base64 encoded string or data URL of prescription photo or PDF")
+    data_url: Optional[str] = Field(default=None, description="Base64 encoded string or data URL of prescription photo or PDF")
+    ocr_text: Optional[str] = Field(default=None, description="Raw OCR text extracted from the prescription image")
     media_type: Optional[str] = "image/jpeg"
 
 @router.get("/status")
@@ -45,65 +46,95 @@ def tablets_status():
     return {
         "mode": "tablets",
         "api_key_configured": has_key,
-        "vision_model": VISION_MODEL,
+        "model": VISION_MODEL,
         "text_model": TEXT_MODEL
     }
 
 @router.post("/scan-prescription", response_model=PrescriptionResponse)
 def scan_prescription(req: ScanPrescriptionRequest):
     """
-    Scan a prescription image/PDF and extract medicines, dosages, and daily schedule using GROQ_API_KEY_TABLETS.
+    Parse prescription text (from OCR) and extract medicines using qwen model.
+    Frontend does OCR with Tesseract.js, backend parses with qwen.
     """
     client = get_groq_client()
 
-    prompt = """
-Read this medical prescription image carefully.
-Extract the doctor's name, general instructions/notes, and all prescribed medicines with dosage, frequency, specific daily times (mapped to 24h format e.g. OD->["09:00"], BD->["09:00","21:00"], TDS->["08:00","14:00","20:00"], HS->["22:00"]), duration in days, and meal relation ("before" or "after").
+    ocr_text = req.ocr_text or ""
+    if not ocr_text.strip():
+        raise HTTPException(status_code=400, detail="No OCR text provided. Please scan the image first.")
 
-Return ONLY a JSON object strictly matching this schema:
-{
-  "doctor": "Dr. Smith",
-  "notes": "Take with water",
+    prompt = f"""You are a medical prescription parser. Below is raw OCR text extracted from a prescription image. 
+Extract the doctor's name, general instructions/notes, and ALL prescribed medicines.
+
+For each medicine extract:
+- name: medicine name
+- dosage: e.g. 500mg, 10ml
+- frequency: e.g. OD, BD, TDS, HS
+- times: map frequency to 24h times (OD->["09:00"], BD->["09:00","21:00"], TDS->["08:00","14:00","20:00"], HS->["22:00"])
+- duration_days: number of days
+- meal_relation: "before" or "after" food
+- notes: any extra instructions
+
+Return ONLY a valid JSON object (no markdown, no explanation) matching this schema:
+{{
+  "doctor": "Dr. Name",
+  "notes": "general notes",
   "medicines": [
-    {
-      "name": "Metformin",
+    {{
+      "name": "Medicine Name",
       "dosage": "500mg",
       "frequency": "BD",
       "times": ["09:00", "21:00"],
       "duration_days": 30,
       "meal_relation": "after",
-      "notes": "For blood sugar"
-    }
+      "notes": ""
+    }}
   ]
-}
+}}
+
+OCR TEXT:
+{ocr_text}
 """
 
     try:
-        image_url = req.data_url if req.data_url.startswith("data:") else f"data:{req.media_type or 'image/jpeg'};base64,{req.data_url}"
+        import requests as req_lib
+        import re
 
-        response = client.chat.completions.create(
-            model=VISION_MODEL,
-            messages=[
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY_TABLETS}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": VISION_MODEL,
+            "messages": [
                 {
                     "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": image_url}}
-                    ]
+                    "content": prompt
                 }
             ],
-            response_format={"type": "json_object"},
-            temperature=0.1,
-            max_tokens=800,
-        )
-        
-        content = response.choices[0].message.content
+            "temperature": 0.1,
+            "max_tokens": 1200,
+        }
+
+        print(f"Sending OCR text to {VISION_MODEL} ({len(ocr_text)} chars)")
+        resp = req_lib.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=60.0)
+        if resp.status_code != 200:
+            print(f"Groq API returned {resp.status_code}: {resp.text}")
+            resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+        print(f"Groq response: {content[:500]}")
+
+        # Strip out markdown json blocks if groq returned them
+        match = re.search(r'\{[\s\S]*\}', content)
+        if match:
+            content = match.group(0)
+
         parsed = json.loads(content)
 
         doctor = parsed.get("doctor", "")
         notes = parsed.get("notes", "")
         meds_raw = parsed.get("medicines", [])
-        
+
         medicines = []
         for m in meds_raw:
             medicines.append(ScannedMed(
@@ -115,31 +146,10 @@ Return ONLY a JSON object strictly matching this schema:
                 meal_relation=m.get("meal_relation", "after"),
                 notes=m.get("notes", "")
             ))
-            
+
+        print(f"Successfully parsed {len(medicines)} medicine(s)")
         return PrescriptionResponse(doctor=doctor, notes=notes, medicines=medicines)
     except Exception as e:
-        # Fallback if image scanning fails or demo mode
-        return PrescriptionResponse(
-            doctor="Dr. Alex Rivera",
-            notes="Prescription scanned cleanly. Take medicines after meals.",
-            medicines=[
-                ScannedMed(
-                    name="Metformin",
-                    dosage="500mg",
-                    frequency="BD",
-                    times=["09:00", "21:00"],
-                    duration_days=30,
-                    meal_relation="after",
-                    notes="Take after breakfast and dinner"
-                ),
-                ScannedMed(
-                    name="Atorvastatin",
-                    dosage="10mg",
-                    frequency="HS",
-                    times=["22:00"],
-                    duration_days=30,
-                    meal_relation="after",
-                    notes="Take at bedtime"
-                )
-            ]
-        )
+        print(f"Parsing Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to parse prescription: {str(e)}")
+

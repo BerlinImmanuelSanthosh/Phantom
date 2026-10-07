@@ -20,6 +20,7 @@ import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authen
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedTabletsRouteImport } from './routes/_authenticated/tablets'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as ApiVisionTabletRouteImport } from './routes/api/vision/tablet'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -76,6 +77,11 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiVisionTabletRoute = ApiVisionTabletRouteImport.update({
+  id: '/api/vision/tablet',
+  path: '/api/vision/tablet',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/tablets': typeof AuthenticatedTabletsRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/vision/tablet': typeof ApiVisionTabletRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -100,6 +107,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/tablets': typeof AuthenticatedTabletsRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/vision/tablet': typeof ApiVisionTabletRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -114,6 +122,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/tablets': typeof AuthenticatedTabletsRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/vision/tablet': typeof ApiVisionTabletRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -128,6 +137,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tablets'
     | '/api/chat'
+    | '/api/vision/tablet'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tablets'
     | '/api/chat'
+    | '/api/vision/tablet'
   id:
     | '__root__'
     | '/'
@@ -153,6 +164,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/tablets'
     | '/api/chat'
+    | '/api/vision/tablet'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -161,6 +173,7 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   SetupRoute: typeof SetupRoute
   ApiChatRoute: typeof ApiChatRoute
+  ApiVisionTabletRoute: typeof ApiVisionTabletRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -242,6 +255,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/vision/tablet': {
+      id: '/api/vision/tablet'
+      path: '/api/vision/tablet'
+      fullPath: '/api/vision/tablet'
+      preLoaderRoute: typeof ApiVisionTabletRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -272,6 +292,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   SetupRoute: SetupRoute,
   ApiChatRoute: ApiChatRoute,
+  ApiVisionTabletRoute: ApiVisionTabletRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
-import { useState } from "react";
+import Tesseract from "tesseract.js";
+import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, Pill, Trash2, Sun, Sunrise, Sunset, Moon } from "lucide-react";
+import { Plus, Pill, Trash2, Sun, Sunrise, Sunset, Moon, Camera, ImageIcon } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useMedicines, useTodayDoses, type Medicine } from "@/hooks/useProfile";
@@ -39,6 +41,70 @@ function Tablets() {
   const meds = useMedicines();
   const doses = useTodayDoses();
   const [open, setOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scannedData, setScannedData] = useState<any[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      if (ev.target?.result) await processImage(ev.target.result as string);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const processImage = async (base64: string) => {
+    setIsScanning(true);
+    toast.loading("Step 1/2: Reading text from image...", { id: "scan" });
+    try {
+      // Step 1: OCR with Tesseract.js (client-side)
+      const { data: { text } } = await Tesseract.recognize(base64, 'eng');
+      console.log("OCR Result:", text);
+      
+      if (!text.trim()) {
+        toast.error("Could not read any text from the image", { id: "scan" });
+        return;
+      }
+
+      // Step 2: Send OCR text to backend for qwen parsing
+      toast.loading("Step 2/2: Parsing medicines with AI...", { id: "scan" });
+      const res = await fetch("http://localhost:8000/api/tablets/scan-prescription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ocr_text: text }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.detail || "Failed to parse prescription");
+      }
+      const data = await res.json();
+      
+      const meds = data.medicines || [];
+      if (meds.length === 0) {
+        toast.error("No medicines found on prescription", { id: "scan" });
+        return;
+      }
+
+      setScannedData(meds.map((d: any) => ({
+        name: d.name || "",
+        dosage: d.dosage || "",
+        times: (d.times || ["09:00"]).join(", "),
+        meal: d.meal_relation || "after",
+        stock: (d.duration_days || 30).toString(),
+        end: "",
+      })));
+      toast.success(`Found ${meds.length} medicine(s)! Please review the details.`, { id: "scan" });
+      setOpen(true);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to process image", { id: "scan" });
+    } finally {
+      setIsScanning(false);
+    }
+  };
 
   const all = (meds.data ?? []).flatMap((m) => (m.specific_times ?? []).map((t) => ({ t, m })));
   const isTaken = (id: string, t: string) => (doses.data ?? []).some((d) => d.medicine_id === id && new Date(d.scheduled_at).toTimeString().slice(0, 5) === t);
@@ -65,7 +131,25 @@ function Tablets() {
     <motion.div variants={stagger} initial="initial" animate="animate" className="space-y-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div><h1 className="text-3xl font-bold">My Tablets</h1><p className="text-sm text-muted-foreground">Tap a dose to mark it taken.</p></div>
-        <PrimaryButton onClick={() => setOpen(true)} className="pulse-glow"><Plus size={18} /> Add tablet</PrimaryButton>
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button disabled={isScanning} className="flex h-10 items-center justify-center gap-2 rounded-xl border border-indigo/20 bg-glass px-4 text-sm font-medium text-foreground hover:bg-white/5 shadow-sm disabled:opacity-50">
+                <Camera size={18} /> {isScanning ? "Scanning..." : "Scan"}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48 bg-background">
+              <DropdownMenuItem onClick={() => setScanOpen(true)} className="cursor-pointer py-2">
+                <Camera className="mr-2 h-4 w-4" /> Take Photo
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => fileInputRef.current?.click()} className="cursor-pointer py-2">
+                <ImageIcon className="mr-2 h-4 w-4" /> Upload Image
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
+          <PrimaryButton onClick={() => setOpen(true)} className="pulse-glow"><Plus size={18} /> Add tablet</PrimaryButton>
+        </div>
       </header>
 
       <GlassCard className="flex items-center gap-6">
@@ -81,7 +165,7 @@ function Tablets() {
               <GlassCard key={s.key} hover={false}>
                 <h2 className="mb-3 flex items-center gap-2 font-bold"><s.icon size={18} /> {s.key}</h2>
                 {items.length === 0 && <p className="text-sm text-muted-foreground">Nothing scheduled</p>}
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
                   {items.map(({ m, t }) => {
                     const done = isTaken(m.id, t);
                     return (
@@ -122,39 +206,146 @@ function Tablets() {
           </table>
         )}
       </GlassCard>
-      <AddTablet open={open} onOpenChange={setOpen} />
+      <AddTablet open={open} onOpenChange={setOpen} initialData={scannedData} />
+      <ScanTablet open={scanOpen} onOpenChange={setScanOpen} onCapture={processImage} />
     </motion.div>
   );
 }
 
-function AddTablet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+function AddTablet({ open, onOpenChange, initialData = [] }: { open: boolean; onOpenChange: (o: boolean) => void; initialData?: any[] }) {
   const qc = useQueryClient();
-  const [f, setF] = useState({ name: "", dosage: "", times: "09:00", meal: "after", end: "", stock: "30" });
+  const defaultF = { name: "", dosage: "", times: "09:00", meal: "after", end: "", stock: "30" };
+  const [forms, setForms] = useState([defaultF]);
+  
+  useEffect(() => {
+    if (open && initialData.length > 0) {
+      setForms(initialData);
+    } else if (!open) {
+      setForms([defaultF]);
+    }
+  }, [open, initialData]);
+
+  const updateForm = (index: number, field: string, value: any) => {
+    const newForms = [...forms];
+    newForms[index] = { ...newForms[index], [field]: value };
+    setForms(newForms);
+  };
+
   async function save() {
-    if (!f.name.trim()) return toast.error("Enter the tablet name");
-    const times = f.times.split(",").map((t) => t.trim()).filter((t) => /^\d{1,2}:\d{2}$/.test(t)).map((t) => t.padStart(5, "0"));
-    if (!times.length) return toast.error("Enter times like 08:00, 20:00");
-    const { error } = await supabase.from("medicines").insert({ name: f.name.trim(), dosage: f.dosage, specific_times: times, times_per_day: times.length, meal_relation: f.meal, end_date: f.end || null, total_stock: +f.stock || null });
-    if (error) return toast.error(error.message);
-    toast.success("Tablet added");
+    for (const f of forms) {
+      if (!f.name.trim()) return toast.error("Enter the tablet name");
+      const times = f.times.split(",").map((t: string) => t.trim()).filter((t: string) => /^\d{1,2}:\d{2}$/.test(t)).map((t: string) => t.padStart(5, "0"));
+      if (!times.length) return toast.error("Enter times like 08:00, 20:00 for " + f.name);
+      const { error } = await supabase.from("medicines").insert({ name: f.name.trim(), dosage: f.dosage, specific_times: times, times_per_day: times.length, meal_relation: f.meal, end_date: f.end || null, total_stock: +f.stock || null });
+      if (error) return toast.error(error.message);
+    }
+    toast.success("Tablet(s) added");
     qc.invalidateQueries({ queryKey: ["medicines"] });
-    setF({ name: "", dosage: "", times: "09:00", meal: "after", end: "", stock: "30" });
+    setForms([defaultF]);
     onOpenChange(false);
   }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="mx-auto max-w-lg rounded-t-3xl">
-        <SheetHeader><SheetTitle>Add a tablet</SheetTitle></SheetHeader>
-        <div className="grid grid-cols-2 gap-3 p-4">
-          <div className="col-span-2"><Field label="Name"><input className={inputCls} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Metformin" /></Field></div>
-          <Field label="Dose"><input className={inputCls} value={f.dosage} onChange={(e) => setF({ ...f, dosage: e.target.value })} placeholder="500mg" /></Field>
-          <Field label="Times"><input className={inputCls} value={f.times} onChange={(e) => setF({ ...f, times: e.target.value })} placeholder="08:00, 20:00" /></Field>
-          <Field label="With food">
-            <select className={inputCls} value={f.meal} onChange={(e) => setF({ ...f, meal: e.target.value })}><option value="before">Before food</option><option value="after">After food</option></select>
-          </Field>
-          <Field label="Stock (doses)"><input className={inputCls} value={f.stock} onChange={(e) => setF({ ...f, stock: e.target.value })} /></Field>
-          <div className="col-span-2"><Field label="Course ends (optional)"><input type="date" className={inputCls} value={f.end} onChange={(e) => setF({ ...f, end: e.target.value })} /></Field></div>
-          <PrimaryButton className="col-span-2" onClick={save}>Save tablet</PrimaryButton>
+      <SheetContent side="bottom" className="mx-auto max-w-lg rounded-t-3xl max-h-[90vh] overflow-y-auto">
+        <SheetHeader><SheetTitle>{forms.length > 1 ? `Review ${forms.length} tablets` : 'Add a tablet'}</SheetTitle></SheetHeader>
+        <div className="flex flex-col gap-8 p-4">
+          {forms.map((f, i) => (
+            <div key={i} className="grid grid-cols-2 gap-3 border-b border-indigo/10 pb-6 last:border-0 last:pb-0">
+              <div className="col-span-2"><Field label="Name"><input className={inputCls} value={f.name} onChange={(e) => updateForm(i, 'name', e.target.value)} placeholder="Metformin" /></Field></div>
+              <Field label="Dose"><input className={inputCls} value={f.dosage} onChange={(e) => updateForm(i, 'dosage', e.target.value)} placeholder="500mg" /></Field>
+              <Field label="Times"><input className={inputCls} value={f.times} onChange={(e) => updateForm(i, 'times', e.target.value)} placeholder="08:00, 20:00" /></Field>
+              <Field label="With food">
+                <select className={inputCls} value={f.meal} onChange={(e) => updateForm(i, 'meal', e.target.value)}><option value="before">Before food</option><option value="after">After food</option></select>
+              </Field>
+              <Field label="Stock (doses)"><input className={inputCls} value={f.stock} onChange={(e) => updateForm(i, 'stock', e.target.value)} /></Field>
+              <div className="col-span-2"><Field label="Course ends (optional)"><input type="date" className={inputCls} value={f.end} onChange={(e) => updateForm(i, 'end', e.target.value)} /></Field></div>
+            </div>
+          ))}
+          <PrimaryButton className="w-full mt-4" onClick={save}>Save {forms.length > 1 ? "all tablets" : "tablet"}</PrimaryButton>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function ScanTablet({ open, onOpenChange, onCapture }: { open: boolean; onOpenChange: (o: boolean) => void; onCapture: (base64: string) => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setError(null);
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then((stream) => {
+          streamRef.current = stream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+        })
+        .catch((err) => {
+          console.error("Camera access error:", err);
+          if (err.name === "NotAllowedError") {
+            setError("Camera permission denied. Please allow camera access in your browser settings.");
+          } else if (err.name === "NotFoundError") {
+            setError("No camera found on this device.");
+          } else {
+            setError("Could not access camera: " + err.message);
+          }
+        });
+    } else {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+    }
+    
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, [open]);
+
+  const handleCapture = () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(videoRef.current, 0, 0);
+    const base64 = canvas.toDataURL("image/jpeg", 0.8);
+    onCapture(base64);
+    onOpenChange(false);
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="bottom" className="mx-auto max-w-lg rounded-t-3xl h-[80vh] flex flex-col">
+        <SheetHeader><SheetTitle>Scan a tablet</SheetTitle></SheetHeader>
+        <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
+          {error ? (
+            <div className="flex-1 flex items-center justify-center text-center p-4">
+              <p className="text-destructive font-medium">{error}</p>
+            </div>
+          ) : (
+            <div className="relative flex-1 rounded-2xl overflow-hidden bg-black/5 border border-border flex items-center justify-center">
+              <video 
+                ref={videoRef} 
+                autoPlay 
+                playsInline 
+                muted 
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 border-[3px] border-primary/40 m-8 rounded-xl pointer-events-none" />
+            </div>
+          )}
+          <PrimaryButton onClick={handleCapture} disabled={!!error} className="w-full h-14 text-lg">
+            <Camera className="mr-2" size={24} /> Capture
+          </PrimaryButton>
         </div>
       </SheetContent>
     </Sheet>

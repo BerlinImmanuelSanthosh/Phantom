@@ -10,7 +10,7 @@ load_dotenv(os.path.join(os.path.dirname(backend_dir), ".env"))
 GROQ_MODEL_DASHBOARD = os.getenv("GROQ_MODEL_DASHBOARD", "openai/gpt-oss-20b")
 GROQ_MODEL_CHAT = os.getenv("GROQ_MODEL_CHAT", "openai/gpt-oss-20b")
 GROQ_MODEL_FOODMAKER = os.getenv("GROQ_MODEL_FOODMAKER", "openai/gpt-oss-20b")
-GROQ_MODEL_TABLETS = os.getenv("GROQ_MODEL_TABLETS", "openai/gpt-oss-20b")
+GROQ_MODEL_TABLETS = os.getenv("GROQ_MODEL_TABLETS", "qwen/qwen3.8-27b")
 
 # Centralized Groq API Keys
 GROQ_API_KEY_DASHBOARD = os.getenv("GROQ_API_KEY_DASHBOARD") or os.getenv("GROQ_API_KEY")
