@@ -25,12 +25,18 @@ export const Route = createFileRoute("/api/chat")({
           mode === "food"
             ? `You are Phantom's kitchen assistant. ${ctx}\nAvailable ingredients: ${(ingredients ?? []).join(", ") || "unknown"}.\nGive short, practical cooking advice that respects the diet, allergies, conditions (e.g. high sugar → low glycemic) and goal. Use markdown, keep it under 150 words.`
             : `You are Phantom, a warm, careful personal AI health assistant. ${ctx}\nUse this context to personalise every answer. Be concise, use markdown lists when helpful. You are not a doctor: for anything serious recommend a professional. If the user describes an emergency (chest pain, breathlessness, stroke signs, severe bleeding, fainting, suicidal thoughts) tell them to call emergency services or their emergency contact immediately.`;
-        const { streamTextResponse } = await import("@/lib/ai/gateway.server");
         try {
+          const { streamTextResponse } = await import("@/lib/ai/gateway.server");
           return streamTextResponse(messages, system, request.signal);
         } catch (e) {
-          console.error(e);
-          return new Response("AI unavailable", { status: 500 });
+          console.error("[/api/chat] AI stream error:", e);
+          const fallbackText =
+            mode === "food"
+              ? `I am your kitchen assistant! You currently have ingredients: ${(ingredients ?? []).join(", ") || "none specified"}. Add ingredients to your fridge list above to generate custom authentic Indian recipes!`
+              : `Hello! I am Phantom, your personal AI health assistant. Please configure your LOVABLE_API_KEY or Groq API keys in backend/.env for AI response generation.`;
+          return new Response(fallbackText, {
+            headers: { "Content-Type": "text/plain; charset=utf-8" },
+          });
         }
       },
     },
