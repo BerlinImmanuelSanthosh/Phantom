@@ -7,9 +7,11 @@ from dotenv import load_dotenv
 from groq import Groq
 
 try:
-    from backend.config import GROQ_MODEL_TABLETS as VISION_MODEL, GROQ_MODEL_DASHBOARD as TEXT_MODEL, GROQ_API_KEY_TABLETS
+    from backend.config import GROQ_MODEL_TABLETS as VISION_MODEL, GROQ_API_KEY_TABLETS
 except ModuleNotFoundError:
-    from config import GROQ_MODEL_TABLETS as VISION_MODEL, GROQ_MODEL_DASHBOARD as TEXT_MODEL, GROQ_API_KEY_TABLETS
+    from config import GROQ_MODEL_TABLETS as VISION_MODEL, GROQ_API_KEY_TABLETS
+
+TEXT_MODEL = VISION_MODEL
 
 router = APIRouter(prefix="/tablets", tags=["Tablets Mode"])
 
@@ -152,4 +154,3 @@ OCR TEXT:
     except Exception as e:
         print(f"Parsing Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to parse prescription: {str(e)}")
-

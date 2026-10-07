@@ -20,7 +20,7 @@ function filePart(f: z.infer<typeof File>) {
 
 export const scanPrescription = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => File.parse(d))
+  .validator((d) => File.parse(d))
   .handler(async ({ data }) => {
     const { generateTextStreamed, extractJson } = await import("./ai/gateway.server");
     const text = await generateTextStreamed([
@@ -48,7 +48,7 @@ export type DetectionResult = {
 
 export const detectIngredients = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => File.parse(d))
+  .validator((d) => File.parse(d))
   .handler(async ({ data }) => {
     const { generateTextStreamed, extractJson } = await import("./ai/gateway.server");
     const prompt = `You are a precision AI computer vision model specialized in refrigerator, pantry, and food ingredient detection (like Google Lens / Gemini Vision).
@@ -98,7 +98,7 @@ Return ONLY a JSON object matching this exact structure:
 
 export const generateRecipes = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ ingredients: z.array(z.string().max(60)).min(1).max(60), request: z.string().max(500).default("") }).parse(d))
+  .validator((d) => z.object({ ingredients: z.array(z.string().max(60)).min(1).max(60), request: z.string().max(500).default("") }).parse(d))
   .handler(async ({ data, context }) => {
     const { generateTextStreamed, extractJson } = await import("./ai/gateway.server");
     const { data: p } = await context.supabase.from("profiles").select("*").eq("id", context.userId).single();
@@ -134,7 +134,7 @@ export type IndianFoodItem = {
 
 export const fetchIndianFoods = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) =>
+  .validator((d) =>
     z
       .object({
         search: z.string().optional(),
@@ -362,4 +362,3 @@ export const fetchIndianFoods = createServerFn({ method: "POST" })
 
     return [] as IndianFoodItem[];
   });
-
