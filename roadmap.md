@@ -1,5 +1,7 @@
 # Phantom roadmap
 
+- [ ] Fix missing browser connection settings and verify the generated client initializes
+
 - [x] Optimize shared animations, page changes, buttons, chat scrolling and photo-reader loading; navigation test and reduced-motion splash check passed
 - [ ] Verify signed-in page transitions in the live preview — blocked by unavailable authorized session; user must sign in
 

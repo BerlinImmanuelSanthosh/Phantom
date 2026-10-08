@@ -13,3 +13,4 @@
 - AI calls go through src/lib/ai/gateway.server.ts and are invoked from *.functions.ts server functions; why: keep keys server-side.
 - Telephony is only accessed via src/lib/callService.ts; why: the real provider is swapped in later.
 - Shared motion uses transform/opacity transitions under a reduced-motion-aware MotionConfig; animate only incoming routed content to avoid duplicate live pages and unnecessary paint work.
+- Vite explicitly embeds only allowlisted public Cloud connection variables; why: browser bundles cannot rely on server environment fallbacks, and private keys must never be included.
