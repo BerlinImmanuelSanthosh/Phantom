@@ -34,36 +34,20 @@ export const Route = createFileRoute("/api/chat")({
             "http://localhost:8000",
           ].filter(Boolean) as string[];
 
-<<<<<<< HEAD
-        for (const baseUrl of backendUrls) {
-          try {
-            const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/api/chat/stream`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                mode,
-                messages,
-                ingredients: ingredients ?? [],
-                profile_context: ctx,
-                language,
-                prescription_context,
-              }),
-              signal: request.signal,
-            });
-            if (response.ok && response.body) return response;
-            console.error(
-              `[/api/chat] Groq backend returned ${response.status} from ${baseUrl}`,
-            );
-          } catch (error) {
-            if (request.signal.aborted) throw error;
-            console.warn(`[/api/chat] Groq backend unavailable at ${baseUrl}:`, error);
-=======
+
           for (const baseUrl of backendUrls) {
             try {
-              const res = await fetch(`${baseUrl}/api/chat/stream`, {
+              const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/api/chat/stream`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ mode, messages, ingredients: ingredients || [], profile_context: ctx }),
+                body: JSON.stringify({
+                  mode,
+                  messages,
+                  ingredients: ingredients ?? [],
+                  profile_context: ctx,
+                  language,
+                  prescription_context,
+                }),
                 signal: request.signal,
               });
               if (res.ok && res.body) {
@@ -76,8 +60,11 @@ export const Route = createFileRoute("/api/chat")({
                   },
                 });
               }
-            } catch (err) {}
->>>>>>> 785dbb53d5bafaea1b96034275774c46c2404c57
+              console.error(`[/api/chat] Groq backend returned ${res.status} from ${baseUrl}`);
+            } catch (error) {
+              if (request.signal.aborted) throw error;
+              console.warn(`[/api/chat] Groq backend unavailable at ${baseUrl}:`, error);
+            }
           }
           
           const { streamTextResponse } = await import("@/lib/ai/gateway.server");

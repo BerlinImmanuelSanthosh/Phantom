@@ -29,12 +29,105 @@ export const Route = createFileRoute("/_authenticated/chat")({
 type Msg = { id: string; role: "user" | "assistant"; content: string; kind?: "rx" | "emergency"; rx?: Prescription };
 const CHIPS = ["Explain my BP", "Diet plan for me", "Side effects of my tablets?", "How's my sugar?"];
 
+
+function AudioVisualizer({ isRecording }: { isRecording: boolean }) {
+  const [data, setData] = useState<Uint8Array>(new Uint8Array(30));
+  const [time, setTime] = useState(0);
+
+  useEffect(() => {
+    if (!isRecording) {
+      setData(new Uint8Array(30));
+      setTime(0);
+      return;
+    }
+    
+    let active = true;
+    let audioCtx: AudioContext;
+    let stream: MediaStream;
+    let raf: number;
+    let timerId: ReturnType<typeof setInterval>;
+
+    timerId = setInterval(() => setTime((t) => t + 1), 1000);
+
+    navigator.mediaDevices.getUserMedia({ audio: true }).then((s) => {
+      if (!active) return;
+      stream = s;
+      audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      const dataArray = new Uint8Array(analyser.frequencyBinCount); // 128
+      
+      function update() {
+        if (!active) return;
+        analyser.getByteTimeDomainData(dataArray);
+        
+        let isSilent = true;
+        for(let i=0; i<dataArray.length; i++) {
+           if(Math.abs(dataArray[i] - 128) > 3) { isSilent = false; break; }
+        }
+
+        const newData = new Uint8Array(30);
+        if (!isSilent) {
+           for (let i = 0; i < 30; i++) {
+              let maxDev = 0;
+              const start = Math.floor(i * (128 / 30));
+              const end = Math.floor((i + 1) * (128 / 30));
+              for(let j=start; j<end; j++) {
+                 const dev = Math.abs(dataArray[j] - 128);
+                 if (dev > maxDev) maxDev = dev;
+              }
+              // Amplify a bit for visual effect
+              newData[i] = Math.min(128, maxDev * 2.5);
+           }
+        }
+        setData(newData);
+        raf = requestAnimationFrame(update);
+      }
+      update();
+    }).catch(console.error);
+
+    return () => {
+      active = false;
+      clearInterval(timerId);
+      if (raf) cancelAnimationFrame(raf);
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      if (audioCtx) audioCtx.close();
+    };
+  }, [isRecording]);
+
+  const mins = Math.floor(time / 60);
+  const secs = (time % 60).toString().padStart(2, '0');
+
+  const bars = Array.from(data).map((val, i) => {
+    const baseHeight = 4;
+    const maxHeight = 28;
+    const h = baseHeight + (val / 128) * maxHeight;
+    return (
+      <span key={i} className="w-1 rounded-full bg-primary transition-all duration-75" style={{ height: `${h}px` }} />
+    );
+  });
+
+  return (
+    <div className="flex h-11 flex-1 items-center justify-between rounded-full border border-primary/20 bg-primary/10 px-4 text-primary">
+      <div className="flex items-center gap-2 font-medium">
+        <span className="h-2 w-2 animate-pulse rounded-full shadow-[0_0_8px_rgba(255,0,0,0.8)]" style={{ backgroundColor: '#ef4444' }} />
+        <span className="font-mono text-sm">{mins}:{secs}</span>
+      </div>
+      <div className="flex items-center gap-1 h-full">
+        {bars}
+      </div>
+    </div>
+  );
+}
 function Chat() {
   const qc = useQueryClient();
   const { openSheet } = useCall();
   const { data: p } = useProfile();
   const scan = useServerFn(scanPrescription);
   const [input, setInput] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
   const [local, setLocal] = useState<Msg[]>([]);
   const [busy, setBusy] = useState<"idle" | "typing" | "streaming" | "scanning">("idle");
   const [voiceAgent, setVoiceAgent] = useState<{ active: boolean; mode: "sos" | "pharmacy"; roomUrl?: string | null }>({ active: false, mode: "sos" });
@@ -247,11 +340,13 @@ function Chat() {
           {CHIPS.map((c) => <motion.button key={c} whileTap={{ scale: 0.95 }} onClick={() => send(c)} className="shrink-0 rounded-full border border-cyan/40 bg-secondary px-3 py-1.5 text-sm font-medium hover:bg-accent">{c}</motion.button>)}
         </div>
         <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="flex items-end gap-2">
-          <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />
-          <button type="button" onClick={() => fileRef.current?.click()} aria-label="Attach prescription" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-muted"><Paperclip size={20} /></button>
-          <VoiceButton onText={(t) => setInput((s) => (s ? s + " " : "") + t)} />
-          <textarea ref={inputRef} rows={1} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }} placeholder="Message Phantom…" aria-label="Message" className="max-h-32 min-h-11 flex-1 resize-none rounded-2xl border border-indigo/15 bg-background px-4 py-2.5 outline-none focus:border-cyan focus:ring-4 focus:ring-cyan/25" />
-          <PrimaryButton type="submit" disabled={busy !== "idle" || !input.trim()} aria-label="Send" className="h-11 w-11 shrink-0 rounded-full p-0"><Send size={18} /></PrimaryButton>
+          <VoiceButton onText={(t) => { setInput(''); send(t); }} isRecording={isRecording} setIsRecording={setIsRecording} />
+          {!isRecording && <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />}
+          {!isRecording && <button type="button" onClick={() => fileRef.current?.click()} aria-label="Attach prescription" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-muted"><Paperclip size={20} /></button>}
+          {isRecording ? (<AudioVisualizer isRecording={isRecording} />) : (
+            <textarea ref={inputRef} rows={1} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }} placeholder="Message Phantom…" aria-label="Message" className="max-h-32 min-h-11 flex-1 resize-none rounded-2xl border border-indigo/15 bg-background px-4 py-2.5 outline-none focus:border-cyan focus:ring-4 focus:ring-cyan/25" />
+          )}
+          {!isRecording && <PrimaryButton type="submit" disabled={busy !== "idle" || !input.trim()} aria-label="Send" className="h-11 w-11 shrink-0 rounded-full p-0"><Send size={18} /></PrimaryButton>}
         </form>
         <p className="mt-2 text-center text-[11px] text-muted-foreground">Phantom is not a substitute for a doctor. For serious symptoms, see a professional.</p>
       </div>
@@ -305,31 +400,27 @@ function RxCard({ rx }: { rx: Prescription }) {
 
 type SR = { start: () => void; stop: () => void; onresult: (e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void; onend: () => void; interimResults: boolean; lang: string };
 
-function VoiceButton({ onText }: { onText: (t: string) => void }) {
-  const [on, setOn] = useState(false);
+function VoiceButton({ onText, isRecording, setIsRecording }: { onText: (t: string) => void, isRecording: boolean, setIsRecording: (v: boolean) => void }) {
   const rec = useRef<SR | null>(null);
   function toggle() {
     const W = window as unknown as { SpeechRecognition?: new () => SR; webkitSpeechRecognition?: new () => SR };
     const Ctor = W.SpeechRecognition ?? W.webkitSpeechRecognition;
     if (!Ctor) return toast.error("Voice input isn't supported in this browser");
-    if (on) return rec.current?.stop();
+    if (isRecording) return rec.current?.stop();
     const r = new Ctor();
     r.lang = navigator.language || "en-US";
     r.interimResults = false;
     r.onresult = (e) => onText(Array.from(e.results).map((x) => x[0]!.transcript).join(" "));
-    r.onend = () => setOn(false);
+    r.onend = () => setIsRecording(false);
     rec.current = r;
     r.start();
-    setOn(true);
+    setIsRecording(true);
   }
   return (
-    <button type="button" onClick={toggle} aria-label={on ? "Stop voice input" : "Voice input"} aria-pressed={on} className={`flex h-11 shrink-0 items-center justify-center gap-0.5 rounded-full px-3 ${on ? "bg-secondary" : "hover:bg-muted"}`}>
-      {on ? (
-        <>
-          {[0, 1, 2, 3, 4].map((i) => <motion.span key={i} className="w-1 rounded-full bg-primary" animate={{ height: [6, 18, 6] }} transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.1 }} />)}
-          <MicOff size={18} className="ml-1" />
-        </>
-      ) : <Mic size={20} />}
+    <button type="button" onClick={toggle} aria-label={isRecording ? "Stop voice input" : "Voice input"} aria-pressed={isRecording} className={`flex h-11 shrink-0 items-center justify-center gap-0.5 rounded-full px-3 ${isRecording ? "bg-secondary" : "hover:bg-muted"}`}>
+      {isRecording ? <Send size={20} /> : <Mic size={20} />}
     </button>
   );
 }
+
+
