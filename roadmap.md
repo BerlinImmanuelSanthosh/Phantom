@@ -1,5 +1,7 @@
 # Phantom roadmap
 
+- [ ] Smooth shared animations, page changes and interactions; verify navigation and reduced motion
+
 - [x] Design system, no-login start, splash, 6-step onboarding, setup sequence
 - [x] Dashboard: health score, AI insight, stats, trends, water, log vitals, quick actions
 - [x] Tablets: timetable, mark taken, add/delete, table, daily adherence

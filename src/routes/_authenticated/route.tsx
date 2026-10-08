@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { LayoutDashboard, MessageCircle, ChefHat, Pill, Settings, Bell, Languages } from "lucide-react";
 import { toast } from "sonner";
-import { Logo, MeshBackground, Skeleton } from "@/components/phantom/ui";
+import { GhostButton, Logo, MeshBackground, Skeleton } from "@/components/phantom/ui";
 import { CallProvider, SosButton } from "@/components/phantom/CallProvider";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";
@@ -74,18 +74,15 @@ function Shell() {
             )}
           </div>
           {ready ? (
-          <AnimatePresence mode="popLayout">
             <motion.div
               key={pathname}
               variants={page}
               initial="initial"
               animate="animate"
-              exit="exit"
-              style={{ willChange: "opacity, transform" }}
+              className="min-w-0"
             >
               <Outlet />
             </motion.div>
-          </AnimatePresence>
           ) : (
             <div className="space-y-4">
               <Skeleton className="h-12 w-64" />
@@ -195,8 +192,8 @@ function LanguageButton() {
   }
 
   return (
-    <button onClick={toggle} aria-label={`Switch to ${lang === "en" ? "Tamil" : "English"}`} className="glass flex h-12 w-12 items-center justify-center rounded-full font-bold text-sm text-foreground hover:bg-muted transition-colors notranslate">
+    <GhostButton onClick={toggle} aria-label={`Switch to ${lang === "en" ? "Tamil" : "English"}`} className="glass h-12 w-12 rounded-full p-0 font-bold text-sm text-foreground hover:bg-muted notranslate">
       {lang === "en" ? "EN" : "தமிழ்"}
-    </button>
+    </GhostButton>
   );
 }

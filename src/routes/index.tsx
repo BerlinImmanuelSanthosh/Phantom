@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { Logo, MeshBackground } from "@/components/phantom/ui";
 import { useAuth } from "@/hooks/useAuth";
@@ -14,12 +14,15 @@ export const Route = createFileRoute("/")({
       { name: "description", content: "Your personal AI health assistant for vitals, diet, tablets and emergencies." },
       { property: "og:title", content: "Phantom — AI health assistant" },
       { property: "og:description", content: "Your personal AI health assistant for vitals, diet, tablets and emergencies." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Splash,
 });
 
 function Splash() {
+  const reduce = useReducedMotion();
   const nav = useNavigate();
   const { session, loading } = useAuth();
   const profile = useProfile();
@@ -38,12 +41,12 @@ function Splash() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center">
       <MeshBackground />
-      <motion.div initial={{ scale: 0.6, opacity: 0, filter: "blur(10px)" }} animate={{ scale: 1, opacity: 1, filter: "blur(0px)" }} transition={{ duration: 0.8, ease }}>
-        <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}>
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.65, ease }}>
+        <motion.div animate={{ y: reduce ? 0 : [0, -6, 0] }} transition={{ duration: 3, repeat: reduce ? 0 : Infinity, ease: "easeInOut" }}>
           <Logo size={96} />
         </motion.div>
       </motion.div>
-      <motion.h1 initial={{ opacity: 0, y: 10, letterSpacing: "0.4em" }} animate={{ opacity: 1, y: 0, letterSpacing: "0.12em" }} transition={{ delay: 0.35, duration: 0.8, ease }} className="mt-6 text-3xl font-bold text-foreground">
+      <motion.h1 initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.5, ease }} className="mt-6 text-3xl font-bold text-foreground">
         PHANTOM
       </motion.h1>
       <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }} className="mt-2 text-sm text-muted-foreground">
