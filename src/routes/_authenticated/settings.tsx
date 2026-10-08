@@ -16,6 +16,8 @@ export const Route = createFileRoute("/_authenticated/settings")({
       { name: "description", content: "Edit your Phantom health profile." },
       { property: "og:title", content: "Settings — Phantom" },
       { property: "og:description", content: "Edit your Phantom health profile." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Settings,

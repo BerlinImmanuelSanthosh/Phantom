@@ -87,13 +87,13 @@
 
 @layer base {
   * { border-color: var(--color-border); }
-  html { -webkit-tap-highlight-color: transparent; }
+  html { -webkit-tap-highlight-color: transparent; scroll-behavior: smooth; scroll-padding-top: 1rem; }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
   }
-  h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: -0.02em; }
+  h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: 0; }
   svg.lucide { color: var(--icon); stroke-width: 1.75; }
 }
 
@@ -104,8 +104,6 @@
   border: 1px solid oklch(0.905 0.155 194.8 / 0.3);
   box-shadow: var(--shadow-soft);
   border-radius: 1.25rem;
-  will-change: transform;
-  transform: translateZ(0);
 }
 
 @utility shadow-soft { box-shadow: var(--shadow-soft); }
@@ -134,13 +132,27 @@
   50% { box-shadow: 0 0 0 12px oklch(0.905 0.155 194.8 / 0); }
 }
 @keyframes shimmer { to { background-position: -200% 0; } }
-@keyframes float-a { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(6vw,4vh) scale(1.1); } }
-@keyframes float-b { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-5vw,-6vh) scale(1.08); } }
+.mesh-background { contain: layout paint; }
+.blob-a { background: color-mix(in oklab, var(--cyan) 28%, transparent); }
+.blob-b { background: color-mix(in oklab, var(--indigo) 16%, transparent); }
 
-.blob-a { animation: float-a 18s ease-in-out infinite; background: oklch(0.905 0.155 194.8 / 0.28); }
-.blob-b { animation: float-b 22s ease-in-out infinite; background: oklch(0.47 0.11 284 / 0.16); }
+.phantom-control {
+  touch-action: manipulation;
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, opacity 180ms ease;
+}
+.phantom-control:focus-visible, a:focus-visible, [role="button"]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 4px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .phantom-control:not(:disabled):hover { opacity: 0.9; }
+}
+@media (max-width: 767px) {
+  .glass { backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2); }
+}
 
 @media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
 

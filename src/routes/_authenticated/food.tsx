@@ -21,6 +21,8 @@ export const Route = createFileRoute("/_authenticated/food")({
       { name: "description", content: "Turn your fridge into recipes that fit your health goal." },
       { property: "og:title", content: "Food Maker — Phantom" },
       { property: "og:description", content: "Turn your fridge into recipes that fit your health goal." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Food,

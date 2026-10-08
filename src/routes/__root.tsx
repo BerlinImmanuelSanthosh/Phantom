@@ -9,6 +9,8 @@ import {
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
+import { MotionConfig } from "framer-motion";
+import { spring } from "@/lib/motion";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -113,8 +115,10 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Outlet />
-        <Toaster position="top-center" />
+        <MotionConfig reducedMotion="user" transition={spring}>
+          <Outlet />
+          <Toaster position="top-center" />
+        </MotionConfig>
       </AuthProvider>
     </QueryClientProvider>
   );

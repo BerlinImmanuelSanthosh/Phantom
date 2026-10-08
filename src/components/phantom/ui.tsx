@@ -1,19 +1,28 @@
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "framer-motion";
-import { useEffect, type ReactNode } from "react";
+import { memo, useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { ease, item } from "@/lib/motion";
+import { ease, item, spring } from "@/lib/motion";
 import type { Status } from "@/lib/health";
 import { statusLabel } from "@/lib/health";
 
-export function MeshBackground() {
+export const MeshBackground = memo(function MeshBackground() {
+  const reduce = useReducedMotion();
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const update = () => setVisible(!document.hidden);
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+  const moving = !reduce && visible;
   return (
-    <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-background" style={{ contain: "paint layout" }}>
-      <div className="blob-a absolute -left-32 -top-32 h-[55vh] w-[55vh] rounded-full blur-3xl" style={{ willChange: "transform" }} />
-      <div className="blob-b absolute -bottom-40 -right-24 h-[60vh] w-[60vh] rounded-full blur-3xl" style={{ willChange: "transform" }} />
-      <div className="blob-a absolute right-1/3 top-1/3 h-[30vh] w-[30vh] rounded-full blur-3xl opacity-60" style={{ willChange: "transform" }} />
+    <div aria-hidden className="mesh-background pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-background">
+      <motion.div className="blob-a absolute -left-32 -top-32 h-[55vh] w-[55vh] rounded-full blur-3xl" animate={moving ? { x: [0, 48, 0], y: [0, 32, 0] } : { x: 0, y: 0 }} transition={moving ? { duration: 24, repeat: Infinity, ease: "easeInOut" } : { duration: 0 }} />
+      <motion.div className="blob-b absolute -bottom-40 -right-24 h-[60vh] w-[60vh] rounded-full blur-3xl" animate={moving ? { x: [0, -40, 0], y: [0, -48, 0] } : { x: 0, y: 0 }} transition={moving ? { duration: 28, repeat: Infinity, ease: "easeInOut" } : { duration: 0 }} />
+      <div className="blob-a absolute right-1/3 top-1/3 h-[30vh] w-[30vh] rounded-full blur-3xl opacity-60" />
     </div>
   );
-}
+});
 
 
 export function Logo({ size = 40 }: { size?: number }) {
@@ -33,14 +42,12 @@ export function Logo({ size = 40 }: { size?: number }) {
 }
 
 export function GlassCard({ children, className, hover = true, onClick }: { children: ReactNode; className?: string; hover?: boolean; onClick?: () => void }) {
+  const reduce = useReducedMotion();
   return (
     <motion.div
       variants={item}
-      whileHover={hover ? { y: -4, boxShadow: "var(--shadow-lift)" } : undefined}
-      transition={{
-        y: { type: "spring", stiffness: 300, damping: 25 },
-        boxShadow: { duration: 0.25, ease },
-      }}
+      whileHover={hover && !reduce ? { y: -3 } : undefined}
+      transition={spring}
       onClick={onClick}
       className={cn("glass p-5", className)}
     >
@@ -61,6 +68,7 @@ export function CountUp({ value, decimals = 0, duration = 1.2, className }: { va
 }
 
 export function Ring({ value, size = 160, stroke = 12, children }: { value: number; size?: number; stroke?: number; children?: ReactNode }) {
+  const reduce = useReducedMotion();
   const r = (size - stroke) / 2;
   return (
     <div className="relative" style={{ width: size, height: size }}>
@@ -82,7 +90,7 @@ export function Ring({ value, size = 160, stroke = 12, children }: { value: numb
           strokeLinecap="round"
           initial={{ pathLength: 0 }}
           animate={{ pathLength: Math.max(0.001, Math.min(1, value / 100)), opacity: value > 0 ? 1 : 0 }}
-          transition={{ duration: 1.4, ease }}
+          transition={{ duration: reduce ? 0 : 0.9, ease }}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">{children}</div>
@@ -107,10 +115,11 @@ export function Skeleton({ className }: { className?: string }) {
 export function PrimaryButton({ children, className, ...props }: React.ComponentProps<typeof motion.button>) {
   return (
     <motion.button
-      whileTap={{ scale: 0.97 }}
+      whileTap={{ scale: 0.98 }}
       whileHover={{ y: -1 }}
+      transition={spring}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground shadow-soft transition-opacity disabled:opacity-50 [&_svg.lucide]:text-icon",
+        "phantom-control inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground shadow-soft disabled:opacity-50 [&_svg.lucide]:text-icon",
         className,
       )}
       {...props}
@@ -123,8 +132,10 @@ export function PrimaryButton({ children, className, ...props }: React.Component
 export function GhostButton({ children, className, ...props }: React.ComponentProps<typeof motion.button>) {
   return (
     <motion.button
-      whileTap={{ scale: 0.97 }}
-      className={cn("inline-flex items-center justify-center gap-2 rounded-xl border border-indigo/20 bg-glass px-5 py-3 font-semibold text-foreground disabled:opacity-50", className)}
+      whileTap={{ scale: 0.98 }}
+      whileHover={{ y: -1 }}
+      transition={spring}
+      className={cn("phantom-control inline-flex items-center justify-center gap-2 rounded-xl border border-indigo/20 bg-glass px-5 py-3 font-semibold text-foreground disabled:opacity-50", className)}
       {...props}
     >
       {children}
