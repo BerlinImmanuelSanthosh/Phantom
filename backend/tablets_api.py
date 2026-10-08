@@ -123,8 +123,10 @@ OCR TEXT:
                 model=VISION_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=1000,
-                response_format={"type": "json_object"}
+                max_tokens=2048,
+                # NOTE: response_format=json_object is intentionally omitted.
+                # Reasoning models hard-fail with json_validate_failed when they
+                # run out of tokens mid-JSON. We use the regex extractor below.
             )
             content = response.choices[0].message.content or ""
             print(f"Groq response: {content[:500]}")

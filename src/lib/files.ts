@@ -58,8 +58,8 @@ async function readTextStream(stream: ReadableStream<Uint8Array>, onChunk: (full
       for (const word of words) {
         full += word;
         onChunk(full);
-        // ~18ms per token ≈ a natural reading pace
-        await new Promise<void>((r) => setTimeout(r, 18));
+        // ~5ms per token — fast enough to feel live without flickering
+        await new Promise<void>((r) => setTimeout(r, 5));
       }
     } else {
       full += incoming;

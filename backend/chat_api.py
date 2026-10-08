@@ -213,7 +213,7 @@ def chat_completion(req: ChatRequest):
             model=current_model,
             messages=groq_messages,
             temperature=0.6,
-            max_tokens=600,
+            max_tokens=2048,
         )
         reply = completion.choices[0].message.content
         return ChatResponse(role="assistant", content=reply, mode=req.mode)
@@ -249,7 +249,7 @@ def chat_stream(req: ChatRequest):
                 model=current_model,
                 messages=groq_messages,
                 temperature=0.6,
-                max_tokens=600,
+                max_tokens=2048,
                 stream=True,
             )
             for chunk in stream:
