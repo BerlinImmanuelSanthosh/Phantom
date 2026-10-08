@@ -104,6 +104,8 @@
   border: 1px solid oklch(0.905 0.155 194.8 / 0.3);
   box-shadow: var(--shadow-soft);
   border-radius: 1.25rem;
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 @utility shadow-soft { box-shadow: var(--shadow-soft); }

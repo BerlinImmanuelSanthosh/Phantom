@@ -10,6 +10,10 @@ export const getRouter = () => {
     context: { queryClient },
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,
+    // Preload route chunks + data when user hovers/focuses a link.
+    // By the time they click, the JS chunk is already in cache — no network wait.
+    defaultPreload: "intent",
+    defaultPendingMinMs: 0,
   });
 
   return router;

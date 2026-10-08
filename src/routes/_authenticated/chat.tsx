@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import ReactMarkdown from "react-markdown";
-import { Mic, MicOff, Paperclip, Phone, Send, Siren, FileText, Check, Trash2 } from "lucide-react";
+import { Mic, MicOff, Paperclip, Phone, Send, Siren, FileText, Check, Trash2, PhoneOff } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Logo, PrimaryButton, GhostButton } from "@/components/phantom/ui";
@@ -36,6 +36,7 @@ function Chat() {
   const [input, setInput] = useState("");
   const [local, setLocal] = useState<Msg[]>([]);
   const [busy, setBusy] = useState<"idle" | "typing" | "streaming" | "scanning">("idle");
+  const [voiceAgent, setVoiceAgent] = useState<{ active: boolean; mode: "sos" | "pharmacy"; roomUrl?: string | null }>({ active: false, mode: "sos" });
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -56,6 +57,8 @@ function Chat() {
   }, [msgs.length, local.at(-1)?.content, busy]);
   useEffect(() => inputRef.current?.focus(), [busy]);
 
+  const [streamingId, setStreamingId] = useState<string | null>(null);
+
   async function send(text: string) {
     const t = text.trim();
     if (!t || busy !== "idle") return;
@@ -72,6 +75,7 @@ function Chat() {
     try {
       const full = await streamChat({ mode: "health", messages: convo }, (txt) => {
         setBusy("streaming");
+        setStreamingId(aid);
         setLocal((l) => (l.some((m) => m.id === aid) ? l.map((m) => (m.id === aid ? { ...m, content: txt } : m)) : [...l, { id: aid, role: "assistant", content: txt }]));
       });
       if (full.trim()) {
@@ -88,6 +92,7 @@ function Chat() {
     } catch (e) {
       toast.error((e as Error).message);
     }
+    setStreamingId(null);
     setBusy("idle");
   }
 
@@ -111,13 +116,50 @@ function Chat() {
     qc.invalidateQueries({ queryKey: ["chat"] });
   }
 
+  function handleCallClick() {
+    const lastText = input || local.at(-1)?.content || history.data?.at(-1)?.content || "";
+    const txt = lastText.toLowerCase();
+    const mode = (txt.includes("get a medicin") || txt.includes("tablet") || txt.includes("order")) ? "pharmacy" : "sos";
+    setVoiceAgent({ active: true, mode, roomUrl: null });
+    
+    fetch("/api/chat/voice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode })
+    })
+    .then(r => r.json())
+    .then(d => {
+       if (d.room_url && d.room_url !== "mock_room_url") {
+           setVoiceAgent({ active: true, mode, roomUrl: d.room_url });
+       } else {
+           toast.info("Add DAILY_API_KEY to config to enable live audio.");
+       }
+    })
+    .catch(console.error);
+  }
+
   return (
     <div className="glass flex h-[calc(100dvh-11rem)] flex-col overflow-hidden p-0 md:h-[calc(100dvh-7rem)]">
+      <AnimatePresence>
+        {voiceAgent.active && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-primary px-6 py-16 text-primary-foreground">
+             <h2 className="text-3xl font-bold mb-4">Speaking to AI...</h2>
+             <p className="text-xl opacity-80 mb-8">{voiceAgent.mode === "pharmacy" ? "Ordering Tablets from Pharmacy" : "Emergency SOS Call"}</p>
+             <div className="pulse-glow rounded-full p-8 bg-secondary/20 mb-12">
+               <Mic size={48} />
+             </div>
+             {voiceAgent.roomUrl ? <p className="text-sm font-mono opacity-60 mb-6">Connected: {new URL(voiceAgent.roomUrl).pathname}</p> : <p className="text-sm opacity-60 mb-6">Audio transport connecting...</p>}
+             <motion.button whileTap={{ scale: 0.9 }} onClick={() => setVoiceAgent({ active: false, mode: "sos", roomUrl: null })} className="rounded-full bg-destructive p-4">
+               <PhoneOff size={32} color="white" />
+             </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <header className="flex items-center gap-3 border-b border-cyan/20 px-4 py-3">
         <motion.div animate={{ scale: [1, 1.06, 1] }} transition={{ duration: 3, repeat: Infinity }}><Logo size={36} /></motion.div>
         <div className="flex-1"><h1 className="text-lg font-bold">Phantom</h1><p className="text-xs text-muted-foreground">Knows your profile, vitals and tablets</p></div>
         <button onClick={clearChat} aria-label="Clear chat" className="rounded-full p-2 hover:bg-muted"><Trash2 size={18} /></button>
-        <motion.button whileTap={{ scale: 0.92 }} onClick={openSheet} aria-label="Call emergency contact" className="pulse-glow flex h-11 w-11 items-center justify-center rounded-full bg-primary"><Phone size={20} /></motion.button>
+        <motion.button whileTap={{ scale: 0.92 }} onClick={handleCallClick} aria-label="Call Voice Agent" className="pulse-glow flex h-11 w-11 items-center justify-center rounded-full bg-primary"><Phone size={20} /></motion.button>
       </header>
 
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
@@ -131,8 +173,21 @@ function Chat() {
         <AnimatePresence initial={false}>
           {msgs.map((m) => (
             <motion.div key={m.id} layout initial={{ opacity: 0, y: 12, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 380, damping: 28 }} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
-              {m.kind === "emergency" ? <EmergencyCard onCall={openSheet} /> : m.kind === "rx" && m.rx ? <RxCard rx={m.rx} /> : m.role === "user" ? (
+              {m.kind === "emergency" ? <EmergencyCard onCall={handleCallClick} /> : m.kind === "rx" && m.rx ? <RxCard rx={m.rx} /> : m.role === "user" ? (
                 <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground">{m.content}</div>
+              ) : m.id === streamingId ? (
+                /* ── Live streaming bubble ── renders plain text so ReactMarkdown
+                   doesn't re-parse the whole tree on every token. A blinking cursor
+                   shows the reply is still being typed. */
+                <div className="prose prose-sm max-w-[85%] text-foreground [&_*]:text-foreground">
+                  <span className="whitespace-pre-wrap">{m.content}</span>
+                  <motion.span
+                    aria-hidden
+                    className="ml-0.5 inline-block h-[1em] w-0.5 rounded-sm bg-primary align-middle"
+                    animate={{ opacity: [1, 0, 1] }}
+                    transition={{ duration: 0.8, repeat: Infinity, ease: "easeInOut" }}
+                  />
+                </div>
               ) : (
                 <div className="prose prose-sm max-w-[85%] text-foreground [&_*]:text-foreground"><ReactMarkdown>{m.content}</ReactMarkdown></div>
               )}

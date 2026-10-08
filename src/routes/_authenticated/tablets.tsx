@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
-import Tesseract from "tesseract.js";
+// tesseract.js is lazy-loaded on demand inside processImage to avoid blocking the page mount
 import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, Pill, Trash2, Sun, Sunrise, Sunset, Moon, Camera, ImageIcon } from "lucide-react";
@@ -61,7 +61,8 @@ function Tablets() {
     setIsScanning(true);
     toast.loading("Step 1/2: Reading text from image...", { id: "scan" });
     try {
-      // Step 1: OCR with Tesseract.js (client-side)
+      // Step 1: OCR with Tesseract.js (lazy-loaded so it doesn't block page mount)
+      const Tesseract = (await import("tesseract.js")).default;
       const { data: { text } } = await Tesseract.recognize(base64, 'eng');
       console.log("OCR Result:", text);
       

@@ -19,12 +19,17 @@ except ModuleNotFoundError:
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard Mode"])
 
+# ── Singleton Groq client ────────────────────────────────────────────────────
+_groq_client: Optional[Groq] = None
+
 def get_groq_client() -> Optional[Groq]:
-    # None when no key is configured: requests then fall through to the local Ollama model.
+    global _groq_client
     if not GROQ_API_KEY_DASHBOARD or "your_groq" in GROQ_API_KEY_DASHBOARD:
         print("GROQ_API_KEY_DASHBOARD is not configured in backend/.env; using local Ollama", flush=True)
         return None
-    return Groq(api_key=GROQ_API_KEY_DASHBOARD, timeout=15.0, max_retries=1)
+    if _groq_client is None:
+        _groq_client = Groq(api_key=GROQ_API_KEY_DASHBOARD, timeout=15.0, max_retries=1)
+    return _groq_client
 
 class VitalsInput(BaseModel):
     age: Optional[int] = 30
@@ -74,8 +79,7 @@ def generate_dashboard_insight(data: VitalsInput):
         "Be practical, empathetic, and encouraging. Return ONLY a valid JSON object without markdown formatting."
     )
 
-    user_prompt = f"""
-Profile details:
+    user_prompt = f"""Profile details:
 - Age: {data.age}, Gender: {data.gender}
 - Height: {data.height_cm} cm, Weight: {data.weight_kg} kg (BMI: {bmi})
 - Healthy weight range: {min_w} - {max_w} kg
@@ -105,9 +109,8 @@ Generate a JSON object strictly matching this schema:
             response = client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=insight_messages,
-                response_format={"type": "json_object"},
                 temperature=0.4,
-                max_tokens=400,
+                max_tokens=600,
             )
             content = response.choices[0].message.content
         except Exception as cloud_error:
@@ -245,27 +248,21 @@ Output raw JSON matching this schema:
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
-            response_format={"type": "json_object"},
             temperature=0.3,
-            max_tokens=1000,
+            # 600 tokens: reasoning models need budget for internal thinking
+            # before emitting visible JSON output. response_format is omitted
+            # because json_object mode hard-fails when thinking tokens
+            # are exhausted (empty failed_generation). safe_parse_json below
+            # extracts the JSON from plain text reliably.
+            max_tokens=600,
         )
         content = response.choices[0].message.content or ""
     except Exception as e:
-        print(f"[card-insight] Notice: json_object mode failed ({e}), retrying standard completion...")
+        print(f"[card-insight] Groq unavailable ({e}), trying local Ollama...", flush=True)
         try:
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=messages,
-                temperature=0.3,
-                max_tokens=1000,
-            )
-            content = response.choices[0].message.content or ""
+            content = "".join(ollama_stream(messages, temperature=0.3, max_tokens=400, json_mode=True))
         except Exception as e2:
-            print(f"[card-insight] Groq unavailable ({e2}), trying local Ollama...", flush=True)
-            try:
-                content = "".join(ollama_stream(messages, temperature=0.3, max_tokens=700, json_mode=True))
-            except Exception as e3:
-                print(f"[card-insight] ❌ Error in backend generation: {e3}")
+            print(f"[card-insight] ❌ Error in backend generation: {e2}")
 
     print(f"[card-insight] Groq raw response: {content}")
     parsed = safe_parse_json(content)
@@ -285,4 +282,3 @@ Output raw JSON matching this schema:
         headline=headline,
         tips=tips[:3]
     )
-

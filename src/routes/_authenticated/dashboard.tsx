@@ -1,10 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Activity, Droplet, HeartPulse, MessageCircle, Pill, Plus, RefreshCw, Scale, ScanLine, Siren, Sparkles, User, Flame, Pencil, Minus } from "lucide-react";
+import { Activity, Droplet, HeartPulse, MessageCircle, Pill, Plus, RefreshCw, Scale, ScanLine, Siren, Sparkles, User, Flame, Pencil, Minus, Ruler } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useMedicines, useProfile } from "@/hooks/useProfile";
@@ -67,8 +67,22 @@ function Dashboard() {
 
   const [editingCard, setEditingCard] = useState<{ card_type: string; metric_label: string } | null>(null);
 
+  // ── Card insight cache ────────────────────────────────────────────────────
+  // Keyed by card_type. Persists for the lifetime of the Dashboard mount so
+  // clicking the same card a second time returns instantly without an AI call.
+  const insightCache = useRef<Map<string, CardInsightData>>(new Map());
+
   async function openCardInsight(info: { card_type: string; metric_label: string; current_value: string; status?: string }) {
     setSelectedCard(info);
+
+    // Return cached result immediately — no API call needed
+    const cached = insightCache.current.get(info.card_type);
+    if (cached) {
+      setCardInsight(cached);
+      setLoadingCardInsight(false);
+      return;
+    }
+
     setCardInsight(null);
     setLoadingCardInsight(true);
     try {
@@ -92,9 +106,10 @@ function Dashboard() {
           conditions: p?.conditions ?? [],
         }
       });
+      insightCache.current.set(info.card_type, res);  // store in cache
       setCardInsight(res);
     } catch {
-      setCardInsight({
+      const fallback: CardInsightData = {
         card_type: info.card_type,
         metric_label: info.metric_label,
         headline: `Optimizing your ${info.metric_label}`,
@@ -103,7 +118,9 @@ function Dashboard() {
           "Maintain balanced daily sleep and hydration habits.",
           "Consult your doctor if you notice unusual variations."
         ]
-      });
+      };
+      insightCache.current.set(info.card_type, fallback);
+      setCardInsight(fallback);
     }
     setLoadingCardInsight(false);
   }
@@ -226,8 +243,10 @@ function Dashboard() {
         </div>
       </div>
 
+      {/* ── Stats row: 4 clean cards ───────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
         <Stat icon={Activity} label="Weight" value={weight} decimals={1} unit="kg" onClick={() => openCardInsight({ card_type: "weight", metric_label: "Weight", current_value: `${weight} kg` })} />
+        <Stat icon={Ruler} label="Height" value={p.height_cm ?? 0} decimals={0} unit="cm" onClick={() => openCardInsight({ card_type: "height", metric_label: "Height", current_value: `${p.height_cm ?? 0} cm` })} />
         <Stat icon={User} label="Age" value={p.age ?? 0} unit="yrs" onClick={() => openCardInsight({ card_type: "age", metric_label: "Age", current_value: `${p.age ?? 0} years` })} />
         <GlassCard className="cursor-pointer" onClick={() => openCardInsight({ card_type: "next_tablet", metric_label: "Next tablet", current_value: nextDose ? `${nextDose.m.name} at ${nextDose.t}` : "No tablets added" })}>
           <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground"><Pill size={18} /> Next tablet</div>
@@ -235,17 +254,9 @@ function Dashboard() {
             <><p className="mt-2 font-display text-xl font-bold">{nextDose.m.name}</p><p className="text-sm text-muted-foreground">{nextDose.t} · {nextDose.m.dosage}</p></>
           ) : <p className="mt-2 text-sm text-muted-foreground">No tablets added</p>}
         </GlassCard>
-        <GlassCard className="cursor-pointer" onClick={() => openCardInsight({ card_type: "calories", metric_label: "Calories", current_value: `${kcal.data ?? 0} / ${target} kcal` })}>
-          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground"><Flame size={18} /> Calories</div>
-          <p className="mt-2 font-display text-xl font-bold"><CountUp value={kcal.data ?? 0} duration={0.3} /> <span className="text-sm font-medium text-muted-foreground">/ {target}</span></p>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted"><motion.div className="h-full bg-phantom" initial={{ width: 0 }} animate={{ width: `${Math.min(100, ((kcal.data ?? 0) / target) * 100)}%` }} transition={{ duration: 0.3, ease: "easeOut" }} /></div>
-          <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
-            <GhostButton className="px-2.5 py-1 text-xs" onClick={() => addCalories(100)}>+100</GhostButton>
-            <GhostButton className="px-2.5 py-1 text-xs" onClick={() => addCalories(-100)}>−</GhostButton>
-          </div>
-        </GlassCard>
       </div>
 
+      {/* ── Trends + Water: moved up directly after stats ─────────────────── */}
       <div className="grid gap-5 lg:grid-cols-3">
         <GlassCard className="lg:col-span-2">
           <h2 className="mb-3 text-lg font-bold">Trends</h2>
@@ -253,7 +264,7 @@ function Dashboard() {
             <p className="py-10 text-center text-sm text-muted-foreground">Log your vitals on another day to see your trends here.</p>
           ) : (
             <div className="grid gap-4 sm:grid-cols-3">
-              {([["weight", "Weight"], ["sugar", "Sugar"], ["sys", "Systolic BP"]] as const).map(([k, l]) => (
+              {([ ["weight", "Weight"], ["sugar", "Sugar"], ["sys", "Systolic BP"] ] as const).map(([k, l]) => (
                 <div key={k}>
                   <p className="mb-1 text-xs font-medium text-muted-foreground">{l}</p>
                   <div className="h-36">
@@ -294,15 +305,28 @@ function Dashboard() {
         </GlassCard>
       </div>
 
-      <GlassCard hover={false}>
-        <h2 className="mb-3 text-lg font-bold">Quick actions</h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Quick to="/chat" icon={MessageCircle} label="Chat" />
-          <Quick to="/food" icon={ScanLine} label="Scan fridge" />
-          <Quick to="/tablets" icon={Pill} label="Add tablet" />
-          <EmergencyQuick />
-        </div>
-      </GlassCard>
+      {/* ── Calories + Quick Actions: side by side at the bottom ──────────── */}
+      <div className="grid gap-5 lg:grid-cols-3">
+        <GlassCard className="cursor-pointer" onClick={() => openCardInsight({ card_type: "calories", metric_label: "Calories", current_value: `${kcal.data ?? 0} / ${target} kcal` })}>
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground"><Flame size={18} /> Calories</div>
+          <p className="mt-2 font-display text-xl font-bold"><CountUp value={kcal.data ?? 0} duration={0.3} /> <span className="text-sm font-medium text-muted-foreground">/ {target}</span></p>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted"><motion.div className="h-full bg-phantom" initial={{ width: 0 }} animate={{ width: `${Math.min(100, ((kcal.data ?? 0) / target) * 100)}%` }} transition={{ duration: 0.3, ease: "easeOut" }} /></div>
+          <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
+            <GhostButton className="px-2.5 py-1 text-xs" onClick={() => addCalories(100)}>+100</GhostButton>
+            <GhostButton className="px-2.5 py-1 text-xs" onClick={() => addCalories(-100)}>−</GhostButton>
+          </div>
+        </GlassCard>
+
+        <GlassCard hover={false} className="lg:col-span-2">
+          <h2 className="mb-3 text-lg font-bold">Quick actions</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Quick to="/chat" icon={MessageCircle} label="Chat" />
+            <Quick to="/food" icon={ScanLine} label="Scan fridge" />
+            <Quick to="/tablets" icon={Pill} label="Add tablet" />
+            <EmergencyQuick />
+          </div>
+        </GlassCard>
+      </div>
 
       <motion.button whileTap={{ scale: 0.95 }} onClick={() => setLogOpen(true)} className="pulse-glow fixed bottom-24 right-5 z-20 flex items-center gap-2 rounded-full bg-primary px-5 py-3.5 font-semibold text-primary-foreground shadow-lift md:bottom-8">
         <Plus size={20} /> Log vitals
@@ -317,17 +341,20 @@ function Dashboard() {
               <Sparkles size={18} />
               AI Insight — {selectedCard?.metric_label}
             </DialogTitle>
-            <GhostButton
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-primary hover:opacity-80 border-none outline-none focus:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:outline-none shadow-none ring-0 cursor-pointer"
-              onClick={() => {
-                const targetCard = selectedCard;
-                setSelectedCard(null);
-                setCardInsight(null);
-                if (targetCard) setEditingCard(targetCard);
-              }}
-            >
-              <Pencil size={14} className="text-primary" /> Edit
-            </GhostButton>
+            {/* Hide Edit for BMI — it's derived from Height & Weight, not directly editable */}
+            {selectedCard?.card_type !== "bmi" && (
+              <GhostButton
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-primary hover:opacity-80 border-none outline-none focus:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:outline-none shadow-none ring-0 cursor-pointer"
+                onClick={() => {
+                  const targetCard = selectedCard;
+                  setSelectedCard(null);
+                  setCardInsight(null);
+                  if (targetCard) setEditingCard(targetCard);
+                }}
+              >
+                <Pencil size={14} className="text-primary" /> Edit
+              </GhostButton>
+            )}
           </DialogHeader>
           {loadingCardInsight ? (
             <div className="space-y-3 pt-2">
@@ -414,12 +441,10 @@ function EditCardSheet({
         await supabase.from("vitals").insert({ weight_kg: defaults.weight, sugar: defaults.sugar, bp_systolic: sys, bp_diastolic: dia });
         await supabase.from("profiles").update({ bp_systolic: sys, bp_diastolic: dia }).eq("id", profile.id);
         toast.success("Blood pressure updated");
-      } else if (card?.card_type === "bmi") {
-        const w = +val || defaults.weight;
-        const h = +val2 || profile.height_cm || 170;
-        await supabase.from("vitals").insert({ weight_kg: w, sugar: defaults.sugar, bp_systolic: defaults.sys, bp_diastolic: defaults.dia });
-        await supabase.from("profiles").update({ weight_kg: w, height_cm: h }).eq("id", profile.id);
-        toast.success("BMI parameters updated");
+      } else if (card?.card_type === "height") {
+        const h = +val || profile.height_cm || 170;
+        await supabase.from("profiles").update({ height_cm: h }).eq("id", profile.id);
+        toast.success("Height updated");
       } else if (card?.card_type === "age") {
         await supabase.from("profiles").update({ age: +val || profile.age }).eq("id", profile.id);
         toast.success("Age updated");
@@ -481,15 +506,10 @@ function EditCardSheet({
               </Field>
             </div>
           )}
-          {card.card_type === "bmi" && (
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Weight (kg)">
-                <input className={inputCls} type="number" placeholder={String(defaults.weight)} value={val} onChange={(e) => setVal(e.target.value)} />
-              </Field>
-              <Field label="Height (cm)">
-                <input className={inputCls} type="number" placeholder={String(profile?.height_cm ?? 170)} value={val2} onChange={(e) => setVal2(e.target.value)} />
-              </Field>
-            </div>
+          {card.card_type === "height" && (
+            <Field label="Height (cm)">
+              <input className={inputCls} type="number" placeholder={String(profile?.height_cm ?? 170)} value={val} onChange={(e) => setVal(e.target.value)} />
+            </Field>
           )}
           {card.card_type === "age" && (
             <Field label="Age (years)">
@@ -501,7 +521,7 @@ function EditCardSheet({
               <input className={inputCls} type="number" placeholder="250" value={val} onChange={(e) => setVal(e.target.value)} />
             </Field>
           )}
-          {card.card_type !== "weight" && card.card_type !== "blood_sugar" && card.card_type !== "blood_pressure" && card.card_type !== "bmi" && card.card_type !== "age" && card.card_type !== "calories" && (
+          {card.card_type !== "weight" && card.card_type !== "height" && card.card_type !== "blood_sugar" && card.card_type !== "blood_pressure" && card.card_type !== "age" && card.card_type !== "calories" && (
             <div className="grid grid-cols-2 gap-3">
               <Field label="Weight (kg)">
                 <input className={inputCls} type="number" placeholder={String(defaults.weight)} value={val} onChange={(e) => setVal(e.target.value)} />

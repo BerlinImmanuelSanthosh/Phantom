@@ -7,13 +7,14 @@ import { statusLabel } from "@/lib/health";
 
 export function MeshBackground() {
   return (
-    <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-background">
-      <div className="blob-a absolute -left-32 -top-32 h-[55vh] w-[55vh] rounded-full blur-3xl" />
-      <div className="blob-b absolute -bottom-40 -right-24 h-[60vh] w-[60vh] rounded-full blur-3xl" />
-      <div className="blob-a absolute right-1/3 top-1/3 h-[30vh] w-[30vh] rounded-full blur-3xl opacity-60" />
+    <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-background" style={{ contain: "paint layout" }}>
+      <div className="blob-a absolute -left-32 -top-32 h-[55vh] w-[55vh] rounded-full blur-3xl" style={{ willChange: "transform" }} />
+      <div className="blob-b absolute -bottom-40 -right-24 h-[60vh] w-[60vh] rounded-full blur-3xl" style={{ willChange: "transform" }} />
+      <div className="blob-a absolute right-1/3 top-1/3 h-[30vh] w-[30vh] rounded-full blur-3xl opacity-60" style={{ willChange: "transform" }} />
     </div>
   );
 }
+
 
 export function Logo({ size = 40 }: { size?: number }) {
   return (

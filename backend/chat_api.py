@@ -1,7 +1,7 @@
 import os
 import json
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
@@ -16,17 +16,23 @@ except ModuleNotFoundError:
     from config import GROQ_MODEL_CHAT as MODEL_NAME, GROQ_API_KEY_CHAT
 
 router = APIRouter(prefix="/chat", tags=["Chat Mode"])
+logger = logging.getLogger("phantom.chat")
+
+# ── Singleton Groq client ────────────────────────────────────────────────────
+# Create once at module load so the SDK reuses its internal connection pool
+# instead of doing a fresh TCP + TLS handshake on every request.
+_groq_client: Optional[Groq] = None
 
 def get_groq_client() -> Optional[Groq]:
-    # Returns None when no key is configured, so the request falls through to the local Ollama model.
+    global _groq_client
     if not GROQ_API_KEY_CHAT or "your_groq" in GROQ_API_KEY_CHAT:
         logger.warning("GROQ_API_KEY_CHAT is not configured in backend/.env; using local Ollama")
         return None
-    return Groq(api_key=GROQ_API_KEY_CHAT, timeout=15.0, max_retries=1)
+    if _groq_client is None:
+        _groq_client = Groq(api_key=GROQ_API_KEY_CHAT, timeout=15.0, max_retries=1)
+    return _groq_client
 
 # ---------------- Offline fallback: local Ollama ----------------
-# Optional overrides in backend/.env: OLLAMA_URL, OLLAMA_MODEL
-logger = logging.getLogger("phantom.chat")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "medical-bot:latest")
 OFFLINE_ERROR = (
@@ -130,11 +136,7 @@ def _base_system_prompt(req: ChatRequest) -> str:
         return (
             f"You are Phantom, a warm, highly knowledgeable personal AI health assistant. User Context: {context_str}\n"
             "Personalise every answer using the profile vitals provided. Be concise, empathetic, and clear. "
-            "FORMATTING RULES:\n"
-            "- Do NOT output any tables.\n"
-            "- Do NOT use the pipe character (|).\n"
-            "- Do NOT use horizontal lines (---).\n"
-            "- Present lists using simple bullet points.\n"
+            "Use Markdown formatting with bullet points when listing instructions or steps. Do NOT output any markdown tables or use the '|' character. "
             "Disclaimer: You are an AI health assistant, not a medical doctor. For emergency symptoms (chest pain, severe breathlessness, fainting, stroke signs), "
             "immediately instruct the user to contact emergency services or their emergency contact."
         )
@@ -192,16 +194,17 @@ def chat_stream(req: ChatRequest):
                 messages=groq_messages,
                 temperature=0.6,
                 max_tokens=600,
-                stream=True
+                stream=True,
             )
             for chunk in stream:
-                delta = chunk.choices[0].delta.content
+                # Reasoning models (gpt-oss-*) emit thinking tokens where
+                # delta.content is None. Skip those — only yield real text.
+                delta = chunk.choices[0].delta.content if chunk.choices else None
                 if delta:
                     started = True
                     yield delta
         except Exception as e:
             if started:
-                # Cloud reply was already partly sent; cannot switch models mid-answer.
                 yield f"\n[Error streaming response: {str(e)}]"
                 return
             logger.warning("Groq chat stream failed, trying local Ollama: %s", e)
@@ -212,4 +215,61 @@ def chat_stream(req: ChatRequest):
                 logger.error("Local Ollama chat failed: %s", local_error)
                 yield OFFLINE_ERROR
 
-    return StreamingResponse(text_generator(), media_type="text/plain")
+    return StreamingResponse(
+        text_generator(),
+        media_type="text/plain; charset=utf-8",
+        headers={
+            # Prevent Nginx / any reverse-proxy from buffering the stream
+            "X-Accel-Buffering": "no",
+            # Tell the browser not to cache and to expect a live stream
+            "Cache-Control": "no-cache",
+            "Transfer-Encoding": "chunked",
+        },
+    )
+
+
+class VoiceRequest(BaseModel):
+    mode: str = "sos"
+
+async def run_pipecat_agent(mode: str, room_url: str):
+    try:
+        import pipecat
+        from pipecat.pipeline.pipeline import Pipeline
+        from pipecat.pipeline.task import PipelineTask
+        from pipecat.pipeline.runner import PipelineRunner
+        
+        print(f"[Pipecat] Initializing voice agent for mode: {mode} in room: {room_url}")
+        runner = PipelineRunner()
+        print(f"[Pipecat] Agent is joining room {room_url} for {mode}... (Mock)")
+    except ImportError:
+        print("[Pipecat] pipecat-ai not installed. Skipping voice agent simulation.")
+    except Exception as e:
+        print(f"[Pipecat] Error: {e}")
+
+@router.post("/voice")
+async def start_voice_agent(req: VoiceRequest, background_tasks: BackgroundTasks):
+    import httpx
+    import time
+    try:
+        from backend.config import DAILY_API_KEY
+    except ModuleNotFoundError:
+        from config import DAILY_API_KEY
+        
+    if not DAILY_API_KEY:
+        # Fallback to mock behavior if no keys
+        background_tasks.add_task(run_pipecat_agent, req.mode, "mock_room_url")
+        return {"status": "starting voice agent (mock)", "mode": req.mode, "room_url": "mock_room_url"}
+        
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            "https://api.daily.co/v1/rooms",
+            headers={"Authorization": f"Bearer {DAILY_API_KEY}"},
+            json={"properties": {"exp": int(time.time()) + 3600}}
+        )
+        if res.status_code != 200:
+            raise HTTPException(status_code=500, detail=f"Failed to create Daily room: {res.text}")
+        room_data = res.json()
+        room_url = room_data["url"]
+        
+    background_tasks.add_task(run_pipecat_agent, req.mode, room_url)
+    return {"status": "starting voice agent", "mode": req.mode, "room_url": room_url}

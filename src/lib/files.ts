@@ -37,16 +37,34 @@ export function setLanguage(lang: Language) {
   }
 }
 
-/** Reads a plain-text streaming body, reporting the full text so far after every chunk. */
+/** Reads a plain-text streaming body, reporting the full text so far after every chunk.
+ *  When a reasoning model sends the whole response in one large chunk we drip it out
+ *  word-by-word so the UI always shows a smooth streaming effect. */
 async function readTextStream(stream: ReadableStream<Uint8Array>, onChunk: (full: string) => void) {
   const reader = stream.getReader();
   const dec = new TextDecoder();
   let full = "";
+
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    full += dec.decode(value, { stream: true });
-    onChunk(full);
+
+    const incoming = dec.decode(value, { stream: true });
+
+    // Reasoning models (like gpt-oss-20b) batch their entire response into
+    // one or two large chunks. Drip those out word-by-word so the UI streams.
+    const words = incoming.split(/(\s+)/); // keep whitespace tokens
+    if (words.length > 20) {
+      for (const word of words) {
+        full += word;
+        onChunk(full);
+        // ~18ms per token ≈ a natural reading pace
+        await new Promise<void>((r) => setTimeout(r, 18));
+      }
+    } else {
+      full += incoming;
+      onChunk(full);
+    }
   }
   return full;
 }
