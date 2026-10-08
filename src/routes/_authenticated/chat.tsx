@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
+import Tesseract from "tesseract.js";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -69,8 +70,9 @@ function Chat() {
     let saved = !e1; // offline: keep the messages on screen when they could not be saved
     const convo = [...(history.data ?? []), ...local.filter((m) => !m.kind), userMsg].slice(-30).map((m) => ({ role: m.role, content: m.content }));
     const aid = crypto.randomUUID();
+    const lastRx = local.slice().reverse().find((m) => m.kind === "rx" && m.rx);
     try {
-      const full = await streamChat({ mode: "health", messages: convo }, (txt) => {
+      const full = await streamChat({ mode: "health", messages: convo, prescription_context: lastRx ? JSON.stringify(lastRx.rx) : undefined }, (txt) => {
         setBusy("streaming");
         setLocal((l) => (l.some((m) => m.id === aid) ? l.map((m) => (m.id === aid ? { ...m, content: txt } : m)) : [...l, { id: aid, role: "assistant", content: txt }]));
       });
@@ -96,13 +98,48 @@ function Chat() {
     if (f.size > 10_000_000) return toast.error("File is too large (max 10 MB)");
     setBusy("scanning");
     setLocal((l) => [...l, { id: crypto.randomUUID(), role: "user", content: `📎 ${f.name}` }]);
+    let parsedRx: Prescription | null = null;
     try {
-      const rx = await scan({ data: await fileToPayload(f) });
-      setLocal((l) => [...l, { id: crypto.randomUUID(), role: "assistant", content: "", kind: "rx", rx }]);
-    } catch {
+      const { dataUrl } = await fileToPayload(f);
+      toast.loading("Reading text from image...", { id: "scan" });
+      const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng');
+      
+      if (!text.trim()) throw new Error("No text found");
+
+      toast.loading("Parsing medicines with AI...", { id: "scan" });
+      const res = await fetch("http://localhost:8000/api/tablets/scan-prescription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ocr_text: text }),
+      });
+      if (!res.ok) throw new Error("Parse failed");
+      parsedRx = await res.json() as Prescription;
+      setLocal((l) => [...l, { id: crypto.randomUUID(), role: "assistant", content: "", kind: "rx", rx: parsedRx! }]);
+      toast.dismiss("scan");
+    } catch (e) {
+      console.error(e);
+      toast.dismiss("scan");
       toast.error("Couldn't read that prescription");
     }
     setBusy("idle");
+
+    if (parsedRx && parsedRx.medicines && parsedRx.medicines.length > 0) {
+      const aid = crypto.randomUUID();
+      const convo = [...(history.data ?? []), ...local.filter((m) => !m.kind)].slice(-30).map((m) => ({ role: m.role, content: m.content }));
+      convo.push({ role: "user", content: "I have uploaded a prescription. Please explain the purpose of each tablet and why I should take them. Give a brief breakdown." });
+      setBusy("streaming");
+      try {
+        const full = await streamChat({ mode: "health", messages: convo, prescription_context: JSON.stringify(parsedRx) }, (txt) => {
+          setLocal((l) => (l.some((m) => m.id === aid) ? l.map((m) => (m.id === aid ? { ...m, content: txt } : m)) : [...l, { id: aid, role: "assistant", content: txt }]));
+        });
+        if (full.trim()) {
+          await supabase.from("chat_messages").insert({ role: "assistant", content: full });
+        }
+      } catch (err) {
+        console.error("Auto-explain failed", err);
+      }
+      setBusy("idle");
+    }
   }
 
   async function clearChat() {

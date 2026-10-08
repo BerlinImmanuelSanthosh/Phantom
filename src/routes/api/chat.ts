@@ -6,6 +6,7 @@ const Body = z.object({
   ingredients: z.array(z.string().max(60)).max(60).optional(),
   messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(8000) })).min(1).max(60),
   language: z.enum(["en", "ta"]).default("en"),
+  prescription_context: z.string().optional(),
 });
 
 export const Route = createFileRoute("/api/chat")({
@@ -20,7 +21,7 @@ export const Route = createFileRoute("/api/chat")({
         if (error || !u.user) return new Response("Unauthorized", { status: 401 });
         const parsed = Body.safeParse(await request.json().catch(() => null));
         if (!parsed.success) return new Response("Invalid request", { status: 400 });
-        const { mode, messages, ingredients, language } = parsed.data;
+        const { mode, messages, ingredients, language, prescription_context } = parsed.data;
         const ctx = await profileContext(supabase, u.user.id);
         const backendUrls = [
           process.env["BACKEND_URL"],
@@ -39,6 +40,7 @@ export const Route = createFileRoute("/api/chat")({
                 ingredients: ingredients ?? [],
                 profile_context: ctx,
                 language,
+                prescription_context,
               }),
               signal: request.signal,
             });

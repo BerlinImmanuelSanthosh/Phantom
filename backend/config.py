@@ -8,7 +8,8 @@ load_dotenv(os.path.join(os.path.dirname(backend_dir), ".env"))
 
 # Centralized Model Configurations (Edit in backend/.env)
 GROQ_MODEL_DASHBOARD = os.getenv("GROQ_MODEL_DASHBOARD", "openai/gpt-oss-120b")
-GROQ_MODEL_CHAT = os.getenv("GROQ_MODEL_CHAT", "openai/gpt-oss-120b")
+GROQ_MODEL_CHAT = os.getenv("GROQ_MODEL_CHAT", "openai/gpt-oss-20b")
+GROQ_MODEL_RAG = os.getenv("GROQ_MODEL_RAG", "qwen/qwen3.8-27b")
 GROQ_MODEL_FOODMAKER = os.getenv("GROQ_MODEL_FOODMAKER", "openai/gpt-oss-120b")
 GROQ_MODEL_TABLETS = os.getenv("GROQ_MODEL_TABLETS", "qwen/qwen3.8-27b")
 

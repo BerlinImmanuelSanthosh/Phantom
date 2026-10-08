@@ -122,6 +122,7 @@ export async function streamChat(body: Record<string, unknown>, onChunk: (full: 
           messages: body["messages"] ?? [],
           ingredients: body["ingredients"] ?? [],
           profile_context: body["profile_context"] ?? "",
+          prescription_context: body["prescription_context"] ?? "",
           language,
         }),
         ...(signal ? { signal } : {}),

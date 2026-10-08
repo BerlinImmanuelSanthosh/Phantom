@@ -34,7 +34,7 @@ function mediaKinds(messages: ModelMessage[]) {
 }
 
 /** Cloud (Lovable AI Gateway) call. */
-function runCloud(messages: ModelMessage[], system?: string, signal?: AbortSignal) {
+function runCloud(messages: ModelMessage[], system?: string, signal?: AbortSignal, overrideModel?: string) {
   const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) throw new Error("AI is not configured");
   const runIdFetch = createLovableAiGatewayRunIdFetch();
@@ -45,11 +45,10 @@ function runCloud(messages: ModelMessage[], system?: string, signal?: AbortSigna
     fetch: runIdFetch.fetch,
   });
   return streamText({
-    model: provider.responses(PHANTOM_MODEL),
+    model: provider.responses(overrideModel || PHANTOM_MODEL),
     ...(system ? { system } : {}),
     messages,
     ...(signal ? { abortSignal: signal } : {}),
-    // One retry only, so an offline machine reaches the local model quickly.
     maxRetries: 1,
     providerOptions: {
       openai: {
@@ -79,9 +78,9 @@ function runLocal(messages: ModelMessage[], model: string, system?: string) {
  * (offline, key missing, service error) it falls back to the local Ollama model.
  * If both fail, throws one clear error.
  */
-export async function generateTextStreamed(messages: ModelMessage[], system?: string) {
+export async function generateTextStreamed(messages: ModelMessage[], system?: string, overrideModel?: string) {
   try {
-    return await runCloud(messages, system).text;
+    return await runCloud(messages, system, undefined, overrideModel).text;
   } catch (cloudError) {
     console.warn("[ai-gateway] Cloud AI failed, trying local Ollama:", errorText(cloudError));
   }

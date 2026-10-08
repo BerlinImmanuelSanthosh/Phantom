@@ -10,7 +10,7 @@ export type Recipe = {
   ingredients: string[]; steps: string[];
 };
 
-const File = z.object({ dataUrl: z.string().startsWith("data:").max(12_000_000), mediaType: z.string().max(60) });
+const File = z.object({ dataUrl: z.string().startsWith("data:").max(12_000_000), mediaType: z.string().max(60), ocr_text: z.string().optional() });
 
 function filePart(f: z.infer<typeof File>) {
   return f.mediaType === "application/pdf"
@@ -23,15 +23,17 @@ export const scanPrescription = createServerFn({ method: "POST" })
   .validator((d) => File.parse(d))
   .handler(async ({ data }) => {
     const { generateTextStreamed, extractJson } = await import("./ai/gateway.server");
+    const contentParts = [
+      { type: "text", text: `Read this prescription. Return ONLY JSON: {"doctor":string,"notes":string,"medicines":[{"name":string,"dosage":string,"frequency":string,"times":["HH:MM"],"duration_days":number|null,"meal_relation":"before"|"after","notes":string}]}. Map frequency to 24h times (OD→09:00, BD→09:00,21:00, TDS→08:00,14:00,20:00, HS→22:00). If unreadable return empty medicines.\n\nOCR TEXT:\n${data.ocr_text || ""}` } as any
+    ];
+    if (!data.ocr_text) contentParts.push(filePart(data));
+
     const text = await generateTextStreamed([
       {
         role: "user",
-        content: [
-          { type: "text", text: `Read this prescription. Return ONLY JSON: {"doctor":string,"notes":string,"medicines":[{"name":string,"dosage":string,"frequency":string,"times":["HH:MM"],"duration_days":number|null,"meal_relation":"before"|"after","notes":string}]}. Map frequency to 24h times (OD→09:00, BD→09:00,21:00, TDS→08:00,14:00,20:00, HS→22:00). If unreadable return empty medicines.` },
-          filePart(data),
-        ],
+        content: contentParts,
       },
-    ]);
+    ], undefined, "qwen/qwen3.8-27b");
     try {
       return extractJson<Prescription>(text);
     } catch {

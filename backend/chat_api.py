@@ -11,9 +11,9 @@ import httpx
 from groq import Groq
 
 try:
-    from backend.config import GROQ_MODEL_CHAT as MODEL_NAME, GROQ_API_KEY_CHAT
+    from backend.config import GROQ_MODEL_CHAT as MODEL_NAME, GROQ_MODEL_RAG as RAG_MODEL_NAME, GROQ_API_KEY_CHAT
 except ModuleNotFoundError:
-    from config import GROQ_MODEL_CHAT as MODEL_NAME, GROQ_API_KEY_CHAT
+    from config import GROQ_MODEL_CHAT as MODEL_NAME, GROQ_MODEL_RAG as RAG_MODEL_NAME, GROQ_API_KEY_CHAT
 
 router = APIRouter(prefix="/chat", tags=["Chat Mode"])
 
@@ -80,6 +80,7 @@ class ChatRequest(BaseModel):
     messages: List[Message]
     ingredients: Optional[List[str]] = Field(default_factory=list)
     profile_context: Optional[str] = ""
+    prescription_context: Optional[str] = ""
     language: Optional[str] = "en"  # "en" | "ta"
 
 class ChatResponse(BaseModel):
@@ -98,7 +99,10 @@ def chat_status():
     }
 
 def build_system_prompt(req: ChatRequest) -> str:
-    return _base_system_prompt(req) + language_instruction(req.language)
+    base = _base_system_prompt(req) + language_instruction(req.language)
+    if req.prescription_context:
+        base += f"\n\n[RAG Context: Uploaded Prescription Data]\n{req.prescription_context}\n[End of RAG Context]"
+    return base
 
 def _base_system_prompt(req: ChatRequest) -> str:
     context_str = req.profile_context or "No specific medical history provided."
@@ -194,8 +198,9 @@ def chat_completion(req: ChatRequest):
         groq_messages.append({"role": msg.role, "content": msg.content})
 
     try:
+        current_model = RAG_MODEL_NAME if req.prescription_context else MODEL_NAME
         completion = client.chat.completions.create(
-            model=MODEL_NAME,
+            model=current_model,
             messages=groq_messages,
             temperature=0.6,
             max_tokens=600,
@@ -229,8 +234,9 @@ def chat_stream(req: ChatRequest):
     def text_generator():
         started = False
         try:
+            current_model = RAG_MODEL_NAME if req.prescription_context else MODEL_NAME
             stream = client.chat.completions.create(
-                model=MODEL_NAME,
+                model=current_model,
                 messages=groq_messages,
                 temperature=0.6,
                 max_tokens=600,
