@@ -72,11 +72,18 @@ function Shell() {
             )}
           </div>
           {ready ? (
-            <AnimatePresence mode="wait">
-              <motion.div key={pathname} variants={page} initial="initial" animate="animate" exit="exit">
-                <Outlet />
-              </motion.div>
-            </AnimatePresence>
+          <AnimatePresence mode="popLayout">
+            <motion.div
+              key={pathname}
+              variants={page}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              style={{ willChange: "opacity, transform" }}
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
           ) : (
             <div className="space-y-4">
               <Skeleton className="h-12 w-64" />

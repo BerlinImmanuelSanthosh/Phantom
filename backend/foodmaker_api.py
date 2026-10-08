@@ -26,13 +26,19 @@ VISION_MODEL = os.getenv("GROQ_MODEL_FOODMAKER_VISION") or "qwen/qwen3.8-27b"
 
 router = APIRouter(prefix="/foodmaker", tags=["Foodmaker Mode"])
 
+# ── Singleton Groq client ────────────────────────────────────────────────────
+_groq_client: Optional[Groq] = None
+
 def get_groq_client() -> Groq:
+    global _groq_client
     if not GROQ_API_KEY_FOODMAKER or "your_groq" in GROQ_API_KEY_FOODMAKER:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="GROQ_API_KEY_FOODMAKER is not configured in backend/.env"
         )
-    return Groq(api_key=GROQ_API_KEY_FOODMAKER)
+    if _groq_client is None:
+        _groq_client = Groq(api_key=GROQ_API_KEY_FOODMAKER, timeout=20.0, max_retries=1)
+    return _groq_client
 
 class DetectIngredientsRequest(BaseModel):
     data_url: str = Field(description="Base64 encoded image string or data URL of food/fridge photo")
@@ -84,7 +90,14 @@ class MatchIndianFoodRequest(BaseModel):
     region: Optional[str] = None
     flavor: Optional[str] = None
 
+# ── In-Memory CSV Cache ──────────────────────────────────────────────────────
+_indian_foods_cache: Optional[List[dict]] = None
+
 def load_indian_foods() -> List[dict]:
+    global _indian_foods_cache
+    if _indian_foods_cache is not None:
+        return _indian_foods_cache
+        
     csv_path = Path(__file__).resolve().parent / "indian_food.csv"
     if not csv_path.exists():
         return []
@@ -120,7 +133,9 @@ def load_indian_foods() -> List[dict]:
                     continue
     except Exception:
         pass
-    return items
+        
+    _indian_foods_cache = items
+    return _indian_foods_cache
 
 @router.get("/status")
 def foodmaker_status():

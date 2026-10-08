@@ -18,3 +18,8 @@ GROQ_API_KEY_DASHBOARD = os.getenv("GROQ_API_KEY_DASHBOARD") or os.getenv("GROQ_
 GROQ_API_KEY_CHAT = os.getenv("GROQ_API_KEY_CHAT") or os.getenv("GROQ_API_KEY")
 GROQ_API_KEY_FOODMAKER = os.getenv("GROQ_API_KEY_FOODMAKER") or os.getenv("GROQ_API_KEY")
 GROQ_API_KEY_TABLETS = os.getenv("GROQ_API_KEY_TABLETS") or os.getenv("GROQ_API_KEY")
+
+# Voice Agent Keys
+DAILY_API_KEY = os.getenv("DAILY_API_KEY")
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
+CARTESIA_API_KEY = os.getenv("CARTESIA_API_KEY")

@@ -545,6 +545,15 @@ function RecipeDetail({ r, onClose }: { r: Recipe; onClose: () => void }) {
     qc.invalidateQueries({ queryKey: ["meals-today"] });
     toast.success(`Logged ${r.calories} kcal`);
   }
+
+  // Lock body scroll when this modal is open
+  useEffect(() => {
+    const originalStyle = window.getComputedStyle(document.body).overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalStyle;
+    };
+  }, []);
   const stepper = (
     <div>
       <div className="mb-3 flex gap-1">{r.steps.map((_, i) => <motion.span key={i} className="h-1.5 flex-1 rounded-full" animate={{ backgroundColor: i <= step ? "var(--cyan)" : "var(--muted)" }} />)}</div>
