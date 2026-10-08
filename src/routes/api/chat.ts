@@ -50,8 +50,9 @@ export const Route = createFileRoute("/api/chat")({
                 }),
                 signal: request.signal,
               });
-              if (res.ok && res.body) {
-                return new Response(res.body, {
+              
+              if (response.ok && response.body) {
+                return new Response(response.body, {
                   headers: {
                     "Content-Type": "text/plain; charset=utf-8",
                     "X-Accel-Buffering": "no",

@@ -220,12 +220,12 @@ function Dashboard() {
             <button onClick={refresh} aria-label="Refresh insight" disabled={refreshing}><RefreshCw size={18} className={refreshing ? "animate-spin" : ""} /></button>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            <span className="rounded-full bg-primary px-4 py-1.5 text-sm font-bold uppercase tracking-wider text-primary-foreground">{insight.recommendation} weight</span>
+            <span className="rounded-full bg-primary px-4 py-1.5 text-sm font-bold uppercase tracking-wider text-primary-foreground">{`${insight.recommendation} weight`}</span>
             <span className="font-display text-xl font-semibold">{insight.headline}</span>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="rounded-xl bg-secondary p-3"><p className="text-xs text-muted-foreground">Target range</p><p className="font-display text-xl font-bold">{insight.target_weight_min}–{insight.target_weight_max} kg</p></div>
-            <div className="rounded-xl bg-secondary p-3"><p className="text-xs text-muted-foreground">Daily calories</p><p className="font-display text-xl font-bold"><CountUp value={target} /> kcal</p></div>
+            <div className="rounded-xl bg-secondary p-3"><p className="text-xs text-muted-foreground">Target range</p><p className="font-display text-xl font-bold">{`${insight.target_weight_min}–${insight.target_weight_max} kg`}</p></div>
+            <div className="rounded-xl bg-secondary p-3"><p className="text-xs text-muted-foreground">Daily calories</p><p className="font-display text-xl font-bold"><CountUp value={target} /> <span>kcal</span></p></div>
           </div>
           <ul className="mt-4 space-y-2">
             {insight.tips.map((t, i) => (
@@ -249,9 +249,9 @@ function Dashboard() {
         <Stat icon={Ruler} label="Height" value={p.height_cm ?? 0} decimals={0} unit="cm" onClick={() => openCardInsight({ card_type: "height", metric_label: "Height", current_value: `${p.height_cm ?? 0} cm` })} />
         <Stat icon={User} label="Age" value={p.age ?? 0} unit="yrs" onClick={() => openCardInsight({ card_type: "age", metric_label: "Age", current_value: `${p.age ?? 0} years` })} />
         <GlassCard className="cursor-pointer" onClick={() => openCardInsight({ card_type: "next_tablet", metric_label: "Next tablet", current_value: nextDose ? `${nextDose.m.name} at ${nextDose.t}` : "No tablets added" })}>
-          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground"><Pill size={18} /> Next tablet</div>
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground"><Pill size={18} /> <span>Next tablet</span></div>
           {meds.isLoading ? <Skeleton className="mt-3 h-10" /> : nextDose ? (
-            <><p className="mt-2 font-display text-xl font-bold">{nextDose.m.name}</p><p className="text-sm text-muted-foreground">{nextDose.t} · {nextDose.m.dosage}</p></>
+            <><p className="mt-2 font-display text-xl font-bold">{nextDose.m.name}</p><p className="text-sm text-muted-foreground">{`${nextDose.t} · ${nextDose.m.dosage}`}</p></>
           ) : <p className="mt-2 text-sm text-muted-foreground">No tablets added</p>}
         </GlassCard>
       </div>
@@ -339,7 +339,7 @@ function Dashboard() {
           <DialogHeader className="flex flex-row items-center justify-between gap-2 pr-6">
             <DialogTitle className="flex items-center gap-2 text-base font-bold">
               <Sparkles size={18} />
-              AI Insight — {selectedCard?.metric_label}
+              <span>{`AI Insight — ${selectedCard?.metric_label || ""}`}</span>
             </DialogTitle>
             {/* Hide Edit for BMI — it's derived from Height & Weight, not directly editable */}
             {selectedCard?.card_type !== "bmi" && (
@@ -352,7 +352,7 @@ function Dashboard() {
                   if (targetCard) setEditingCard(targetCard);
                 }}
               >
-                <Pencil size={14} className="text-primary" /> Edit
+                <Pencil size={14} className="text-primary" /> <span>Edit</span>
               </GhostButton>
             )}
           </DialogHeader>
@@ -368,7 +368,7 @@ function Dashboard() {
               <ul className="space-y-2">
                 {cardInsight.tips.map((tip, i) => (
                   <motion.li key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }} className="flex gap-3 text-sm">
-                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-cyan" />{tip}
+                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-cyan" /><span>{tip}</span>
                   </motion.li>
                 ))}
               </ul>
@@ -384,7 +384,7 @@ function Stat({ icon: Icon, label, value, unit, sub, status, decimals = 0, onCli
   return (
     <GlassCard onClick={onClick} className={onClick ? "cursor-pointer" : undefined}>
       <div className="flex items-center justify-between">
-        <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground"><Icon size={18} /> {label}</span>
+        <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground"><Icon size={18} /> <span>{label}</span></span>
         {status && <StatusChip status={status} />}
       </div>
       <p className="mt-3 font-display text-3xl font-bold"><CountUp value={value} decimals={decimals} />{unit && <span className="ml-1 text-base font-medium text-muted-foreground">{unit}</span>}</p>
@@ -483,7 +483,7 @@ function EditCardSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="bottom" className="mx-auto max-w-lg rounded-t-3xl">
         <SheetHeader>
-          <SheetTitle>Edit {card.metric_label}</SheetTitle>
+          <SheetTitle>{`Edit ${card.metric_label}`}</SheetTitle>
         </SheetHeader>
         <div className="space-y-4 p-4">
           {card.card_type === "weight" && (
@@ -532,7 +532,7 @@ function EditCardSheet({
             </div>
           )}
           <PrimaryButton className="w-full" onClick={save}>
-            Save {card.metric_label}
+            {`Save ${card.metric_label}`}
           </PrimaryButton>
         </div>
       </SheetContent>

@@ -123,7 +123,10 @@ OCR TEXT:
                 model=VISION_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=1000,
+                max_tokens=2048,
+                # NOTE: response_format=json_object is intentionally omitted.
+                # Reasoning models hard-fail with json_validate_failed when they
+                # run out of tokens mid-JSON. We use the regex extractor below.
             )
             content = response.choices[0].message.content or ""
             print(f"Groq response: {content[:500]}")
@@ -139,10 +142,17 @@ OCR TEXT:
             raise HTTPException(status_code=503, detail=OFFLINE_ERROR)
 
     try:
+        content = content.strip()
+        if not content:
+            raise ValueError("Received an empty response from the AI model")
+
         # Strip out markdown json blocks if model wrapped them
         match = re.search(r'\{[\s\S]*\}', content)
         if match:
             content = match.group(0)
+            
+        if not content:
+             raise ValueError("Could not extract JSON object from the AI response")
 
         parsed = json.loads(content)
 

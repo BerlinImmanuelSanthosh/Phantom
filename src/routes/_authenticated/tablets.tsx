@@ -117,8 +117,22 @@ function Tablets() {
     const d = new Date();
     const [h, mi] = t.split(":").map(Number);
     d.setHours(h, mi, 0, 0);
-    const { error } = await supabase.from("dose_logs").insert({ medicine_id: m.id, scheduled_at: d.toISOString(), taken_at: new Date().toISOString(), status: "taken" });
-    if (error) return toast.error(error.message);
+
+    const newDose = { medicine_id: m.id, scheduled_at: d.toISOString(), taken_at: new Date().toISOString(), status: "taken" };
+    qc.setQueriesData({ queryKey: ["doses-today"] }, (old: any) => [...(old || []), newDose]);
+    if (m.total_stock != null) {
+      qc.setQueriesData({ queryKey: ["medicines"] }, (old: any) => 
+        (old || []).map((x: any) => x.id === m.id ? { ...x, total_stock: Math.max(0, x.total_stock - 1) } : x)
+      );
+    }
+
+    const { error } = await supabase.from("dose_logs").insert(newDose);
+    if (error) {
+      qc.invalidateQueries({ queryKey: ["doses-today"] });
+      qc.invalidateQueries({ queryKey: ["medicines"] });
+      return toast.error(error.message);
+    }
+    
     if (m.total_stock != null) await supabase.from("medicines").update({ total_stock: Math.max(0, m.total_stock - 1) }).eq("id", m.id);
     qc.invalidateQueries({ queryKey: ["doses-today"] });
     qc.invalidateQueries({ queryKey: ["medicines"] });
@@ -127,12 +141,25 @@ function Tablets() {
     await supabase.from("medicines").delete().eq("id", id);
     qc.invalidateQueries({ queryKey: ["medicines"] });
   }
+  async function removeAll() {
+    if (!confirm("Are you sure you want to remove all tablets?")) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from("medicines").delete().eq("user_id", user.id);
+    qc.invalidateQueries({ queryKey: ["medicines"] });
+    qc.invalidateQueries({ queryKey: ["doses-today"] });
+  }
 
   return (
     <motion.div variants={stagger} initial="initial" animate="animate" className="space-y-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div><h1 className="text-3xl font-bold">My Tablets</h1><p className="text-sm text-muted-foreground">Tap a dose to mark it taken.</p></div>
         <div className="flex items-center gap-2">
+          {(meds.data ?? []).length > 0 && (
+            <button onClick={removeAll} aria-label="Clear all tablets" className="flex h-10 w-10 items-center justify-center rounded-xl border border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive/10">
+              <Trash2 size={18} />
+            </button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button disabled={isScanning} className="flex h-10 items-center justify-center gap-2 rounded-xl border border-indigo/20 bg-glass px-4 text-sm font-medium text-foreground hover:bg-white/5 shadow-sm disabled:opacity-50">

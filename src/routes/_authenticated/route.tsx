@@ -1,7 +1,8 @@
 import { createFileRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect } from "react";
-import { LayoutDashboard, MessageCircle, ChefHat, Pill, Settings, Bell } from "lucide-react";
+import { useEffect, useState } from "react";
+import { LayoutDashboard, MessageCircle, ChefHat, Pill, Settings, Bell, Languages } from "lucide-react";
+import { toast } from "sonner";
 import { Logo, MeshBackground, Skeleton } from "@/components/phantom/ui";
 import { CallProvider, SosButton } from "@/components/phantom/CallProvider";
 import { useAuth } from "@/hooks/useAuth";
@@ -66,6 +67,7 @@ function Shell() {
             <div className="flex items-center gap-2 md:invisible"><Logo size={30} /><span className="font-display font-bold tracking-wide">PHANTOM</span></div>
             {ready && (
               <div className="flex items-center gap-3">
+                <LanguageButton />
                 <BellLink />
                 <SosButton />
               </div>
@@ -129,5 +131,72 @@ function BellLink() {
         )}
       </AnimatePresence>
     </Link>
+  );
+}
+
+function LanguageButton() {
+  const [lang, setLang] = useState<"en" | "ta">("en");
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("phantom-language");
+      if (saved === "ta") setLang("ta");
+    } catch {}
+
+    if (!document.getElementById("google-translate-script")) {
+      const gtDiv = document.createElement("div");
+      gtDiv.id = "google_translate_element";
+      gtDiv.style.display = "none";
+      document.body.appendChild(gtDiv);
+
+      const style = document.createElement("style");
+      style.innerHTML = `
+        iframe.goog-te-banner-frame { display: none !important; visibility: hidden !important; }
+        .goog-te-banner-frame { display: none !important; }
+        .skiptranslate > iframe { display: none !important; }
+        html, body { top: 0px !important; }
+        .goog-tooltip, #goog-gt-tt, .VIpgJd-yAWNEb-VIpgJd-fmcmS-sn54Q { display: none !important; }
+        .goog-tooltip:hover { display: none !important; }
+        .goog-text-highlight { background-color: transparent !important; border: none !important; box-shadow: none !important; }
+      `;
+      document.head.appendChild(style);
+
+      ;(window as any).googleTranslateElementInit = () => {
+        new (window as any).google.translate.TranslateElement(
+          { pageLanguage: 'en', includedLanguages: 'ta,en', autoDisplay: false },
+          'google_translate_element'
+        );
+      };
+
+      const script = document.createElement("script");
+      script.id = "google-translate-script";
+      script.src = "//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
+      document.body.appendChild(script);
+    }
+  }, []);
+
+  function toggle() {
+    const newLang = lang === "en" ? "ta" : "en";
+    setLang(newLang);
+    try {
+      localStorage.setItem("phantom-language", newLang);
+      if (newLang === "ta") {
+        document.cookie = "googtrans=/en/ta; path=/";
+        document.cookie = "googtrans=/en/ta; domain=" + window.location.hostname + "; path=/";
+      } else {
+        document.cookie = "googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+        document.cookie = "googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; domain=" + window.location.hostname + "; path=/;";
+        document.cookie = "googtrans=/en/en; path=/";
+        document.cookie = "googtrans=/en/en; domain=" + window.location.hostname + "; path=/";
+      }
+    } catch {}
+    toast.success(newLang === "ta" ? "Translating to Tamil..." : "Restoring English...");
+    setTimeout(() => window.location.reload(), 500);
+  }
+
+  return (
+    <button onClick={toggle} aria-label={`Switch to ${lang === "en" ? "Tamil" : "English"}`} className="glass flex h-12 w-12 items-center justify-center rounded-full font-bold text-sm text-foreground hover:bg-muted transition-colors notranslate">
+      {lang === "en" ? "EN" : "தமிழ்"}
+    </button>
   );
 }

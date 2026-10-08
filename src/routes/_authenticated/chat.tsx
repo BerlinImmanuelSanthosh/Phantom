@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import ReactMarkdown from "react-markdown";
-import { Mic, MicOff, Paperclip, Phone, Send, Siren, FileText, Check, Trash2, PhoneOff } from "lucide-react";
+import { Mic, MicOff, Paperclip, Phone, Send, Siren, FileText, Check, Trash2, PhoneOff, Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Logo, PrimaryButton, GhostButton } from "@/components/phantom/ui";
@@ -57,7 +57,7 @@ function AudioVisualizer({ isRecording }: { isRecording: boolean }) {
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
-      const dataArray = new Uint8Array(analyser.frequencyBinCount); // 128
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
       
       function update() {
         if (!active) return;
@@ -78,7 +78,6 @@ function AudioVisualizer({ isRecording }: { isRecording: boolean }) {
                  const dev = Math.abs(dataArray[j] - 128);
                  if (dev > maxDev) maxDev = dev;
               }
-              // Amplify a bit for visual effect
               newData[i] = Math.min(128, maxDev * 2.5);
            }
         }
@@ -121,6 +120,7 @@ function AudioVisualizer({ isRecording }: { isRecording: boolean }) {
     </div>
   );
 }
+
 function Chat() {
   const qc = useQueryClient();
   const { openSheet } = useCall();
@@ -131,6 +131,9 @@ function Chat() {
   const [local, setLocal] = useState<Msg[]>([]);
   const [busy, setBusy] = useState<"idle" | "typing" | "streaming" | "scanning">("idle");
   const [voiceAgent, setVoiceAgent] = useState<{ active: boolean; mode: "sos" | "pharmacy"; roomUrl?: string | null }>({ active: false, mode: "sos" });
+  const [attachment, setAttachment] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -155,16 +158,82 @@ function Chat() {
 
   async function send(text: string) {
     const t = text.trim();
-    if (!t || busy !== "idle") return;
+    if ((!t && !attachment) || busy !== "idle") return;
     setInput("");
-    const userMsg: Msg = { id: crypto.randomUUID(), role: "user", content: t };
-    const extra: Msg[] = EMERGENCY_RE.test(t) ? [{ id: crypto.randomUUID(), role: "assistant", content: "", kind: "emergency" }] : [];
-    setLocal((l) => [...l, userMsg, ...extra]);
+    
+    let currentAttachment = attachment;
+    if (currentAttachment) {
+      setAttachment(null);
+      setPreviewUrl(null);
+    }
+
+    let userMsg: Msg | null = null;
+    let saved = true;
+
+    if (t || currentAttachment) {
+      const displayContent = currentAttachment ? (t ? `${t}\n\n📎 ${currentAttachment.name}` : `📎 ${currentAttachment.name}`) : t;
+      userMsg = { id: crypto.randomUUID(), role: "user", content: displayContent };
+      const extra: Msg[] = EMERGENCY_RE.test(t) ? [{ id: crypto.randomUUID(), role: "assistant", content: "", kind: "emergency" }] : [];
+      setLocal((l) => [...l, userMsg!, ...extra]);
+      const { error: e1 } = await supabase.from("chat_messages").insert({ role: "user", content: displayContent });
+      if (e1) {
+        console.error(e1);
+        saved = false;
+      }
+    }
+
+    if (currentAttachment) {
+      setBusy("scanning");
+      let parsedRx: Prescription | null = null;
+      try {
+        const { dataUrl } = await fileToPayload(currentAttachment);
+        toast.loading("Reading text from image...", { id: "scan" });
+        const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng');
+        
+        if (!text.trim()) throw new Error("No text found");
+
+        toast.loading("Parsing medicines with AI...", { id: "scan" });
+        const res = await fetch("http://localhost:8000/api/tablets/scan-prescription", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ocr_text: text }),
+        });
+        if (!res.ok) throw new Error("Parse failed");
+        parsedRx = await res.json() as Prescription;
+        setLocal((l) => [...l, { id: crypto.randomUUID(), role: "assistant", content: "", kind: "rx", rx: parsedRx! }]);
+        toast.dismiss("scan");
+      } catch (e) {
+        console.error(e);
+        toast.dismiss("scan");
+        toast.error("Couldn't read that prescription");
+      }
+      setBusy("idle");
+
+      if (parsedRx && parsedRx.medicines && parsedRx.medicines.length > 0) {
+        const aid = crypto.randomUUID();
+        const convo = [...(history.data ?? []), ...local.filter((m) => !m.kind)].slice(-30).map((m) => ({ role: m.role, content: m.content }));
+        if (userMsg) convo.push({ role: "user", content: t ? `I have uploaded a prescription with this message: "${t}". Please explain the purpose of each tablet.` : "I have uploaded a prescription. Please explain the purpose of each tablet and why I should take them. Give a brief breakdown." });
+        setBusy("typing");
+        try {
+          const full = await streamChat({ mode: "health", messages: convo, prescription_context: JSON.stringify(parsedRx) }, (txt) => {
+            setBusy("streaming");
+            setStreamingId(aid);
+            setLocal((l) => (l.some((m) => m.id === aid) ? l.map((m) => (m.id === aid ? { ...m, content: txt } : m)) : [...l, { id: aid, role: "assistant", content: txt }]));
+          });
+          if (full.trim()) {
+            await supabase.from("chat_messages").insert({ role: "assistant", content: full });
+          }
+        } catch (err) {
+          console.error("Auto-explain failed", err);
+        }
+        setStreamingId(null);
+        setBusy("idle");
+      }
+      return;
+    }
+
     setBusy("typing");
-    const { error: e1 } = await supabase.from("chat_messages").insert({ role: "user", content: t });
-    if (e1) console.error(e1);
-    let saved = !e1; // offline: keep the messages on screen when they could not be saved
-    const convo = [...(history.data ?? []), ...local.filter((m) => !m.kind), userMsg].slice(-30).map((m) => ({ role: m.role, content: m.content }));
+    const convo = [...(history.data ?? []), ...local.filter((m) => !m.kind), userMsg!].slice(-30).map((m) => ({ role: m.role, content: m.content }));
     const aid = crypto.randomUUID();
     const lastRx = local.slice().reverse().find((m) => m.kind === "rx" && m.rx);
     try {
@@ -191,53 +260,11 @@ function Chat() {
     setBusy("idle");
   }
 
-  async function onFile(f: File | undefined) {
+  function onFile(f: File | undefined) {
     if (!f) return;
     if (f.size > 10_000_000) return toast.error("File is too large (max 10 MB)");
-    setBusy("scanning");
-    setLocal((l) => [...l, { id: crypto.randomUUID(), role: "user", content: `📎 ${f.name}` }]);
-    let parsedRx: Prescription | null = null;
-    try {
-      const { dataUrl } = await fileToPayload(f);
-      toast.loading("Reading text from image...", { id: "scan" });
-      const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng');
-      
-      if (!text.trim()) throw new Error("No text found");
-
-      toast.loading("Parsing medicines with AI...", { id: "scan" });
-      const res = await fetch("http://localhost:8000/api/tablets/scan-prescription", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ocr_text: text }),
-      });
-      if (!res.ok) throw new Error("Parse failed");
-      parsedRx = await res.json() as Prescription;
-      setLocal((l) => [...l, { id: crypto.randomUUID(), role: "assistant", content: "", kind: "rx", rx: parsedRx! }]);
-      toast.dismiss("scan");
-    } catch (e) {
-      console.error(e);
-      toast.dismiss("scan");
-      toast.error("Couldn't read that prescription");
-    }
-    setBusy("idle");
-
-    if (parsedRx && parsedRx.medicines && parsedRx.medicines.length > 0) {
-      const aid = crypto.randomUUID();
-      const convo = [...(history.data ?? []), ...local.filter((m) => !m.kind)].slice(-30).map((m) => ({ role: m.role, content: m.content }));
-      convo.push({ role: "user", content: "I have uploaded a prescription. Please explain the purpose of each tablet and why I should take them. Give a brief breakdown." });
-      setBusy("streaming");
-      try {
-        const full = await streamChat({ mode: "health", messages: convo, prescription_context: JSON.stringify(parsedRx) }, (txt) => {
-          setLocal((l) => (l.some((m) => m.id === aid) ? l.map((m) => (m.id === aid ? { ...m, content: txt } : m)) : [...l, { id: aid, role: "assistant", content: txt }]));
-        });
-        if (full.trim()) {
-          await supabase.from("chat_messages").insert({ role: "assistant", content: full });
-        }
-      } catch (err) {
-        console.error("Auto-explain failed", err);
-      }
-      setBusy("idle");
-    }
+    setAttachment(f);
+    setPreviewUrl(URL.createObjectURL(f));
   }
 
   async function clearChat() {
@@ -284,6 +311,12 @@ function Chat() {
              </motion.button>
           </motion.div>
         )}
+        {viewingImage && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setViewingImage(null)} className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm cursor-zoom-out">
+            <motion.img initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} src={viewingImage} alt="Fullscreen preview" className="max-h-full max-w-full rounded-xl object-contain shadow-2xl cursor-default" onClick={(e) => e.stopPropagation()} />
+            <button onClick={() => setViewingImage(null)} className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70 text-xl font-bold">×</button>
+          </motion.div>
+        )}
       </AnimatePresence>
       <header className="flex items-center gap-3 border-b border-cyan/20 px-4 py-3">
         <motion.div animate={{ scale: [1, 1.06, 1] }} transition={{ duration: 3, repeat: Infinity }}><Logo size={36} /></motion.div>
@@ -302,7 +335,7 @@ function Chat() {
         )}
         <AnimatePresence initial={false}>
           {msgs.map((m) => (
-            <motion.div key={m.id} layout initial={{ opacity: 0, y: 12, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 380, damping: 28 }} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
+            <motion.div key={m.id} initial={{ opacity: 0, y: 12, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 380, damping: 28 }} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
               {m.kind === "emergency" ? <EmergencyCard onCall={handleCallClick} /> : m.kind === "rx" && m.rx ? <RxCard rx={m.rx} /> : m.role === "user" ? (
                 <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground">{m.content}</div>
               ) : m.id === streamingId ? (
@@ -319,7 +352,10 @@ function Chat() {
                   />
                 </div>
               ) : (
-                <div className="prose prose-sm max-w-[85%] text-foreground [&_*]:text-foreground"><ReactMarkdown>{m.content}</ReactMarkdown></div>
+                <div className="flex max-w-[85%] items-start gap-2 group">
+                  <div className="prose prose-sm flex-1 text-foreground [&_*]:text-foreground"><ReactMarkdown>{m.content}</ReactMarkdown></div>
+                  <SpeakMessageButton text={m.content} />
+                </div>
               )}
             </motion.div>
           ))}
@@ -335,19 +371,46 @@ function Chat() {
         <div ref={endRef} />
       </div>
 
-      <div className="border-t border-cyan/20 p-3">
+      <div className="border-t border-cyan/20 p-3 relative">
         <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
           {CHIPS.map((c) => <motion.button key={c} whileTap={{ scale: 0.95 }} onClick={() => send(c)} className="shrink-0 rounded-full border border-cyan/40 bg-secondary px-3 py-1.5 text-sm font-medium hover:bg-accent">{c}</motion.button>)}
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="flex items-end gap-2">
-          <VoiceButton onText={(t) => { setInput(''); send(t); }} isRecording={isRecording} setIsRecording={setIsRecording} />
-          {!isRecording && <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />}
-          {!isRecording && <button type="button" onClick={() => fileRef.current?.click()} aria-label="Attach prescription" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-muted"><Paperclip size={20} /></button>}
-          {isRecording ? (<AudioVisualizer isRecording={isRecording} />) : (
-            <textarea ref={inputRef} rows={1} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }} placeholder="Message Phantom…" aria-label="Message" className="max-h-32 min-h-11 flex-1 resize-none rounded-2xl border border-indigo/15 bg-background px-4 py-2.5 outline-none focus:border-cyan focus:ring-4 focus:ring-cyan/25" />
+        <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="flex flex-col gap-2">
+          {attachment && (
+            <div className="relative self-start mt-1 mb-2">
+              {previewUrl && previewUrl.startsWith("blob:") ? (
+                <img onClick={() => setViewingImage(previewUrl)} src={previewUrl} alt="Attachment preview" className="rounded-xl border border-cyan/20 object-cover h-24 w-auto max-w-[200px] shadow-sm cursor-zoom-in hover:opacity-80 transition-opacity" />
+              ) : (
+                <div className="flex h-16 items-center gap-2 rounded-xl border border-cyan/20 bg-secondary px-3 text-sm shadow-sm">
+                  <FileText size={16} /> <span className="truncate">{attachment.name}</span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => { setAttachment(null); setPreviewUrl(null); }}
+                className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-destructive text-white shadow-md hover:bg-destructive/90"
+              >
+                ×
+              </button>
+            </div>
           )}
-          {!isRecording && <PrimaryButton type="submit" disabled={busy !== "idle" || !input.trim()} aria-label="Send" className="h-11 w-11 shrink-0 rounded-full p-0"><Send size={18} /></PrimaryButton>}
-        </form>
+          <div className="flex items-end gap-2 w-full">
+              <VoiceButton onText={(t) => { setInput(''); send(t); }} isRecording={isRecording} setIsRecording={setIsRecording} />
+              {!isRecording && <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => { 
+                const file = e.target.files?.[0];
+                if (file) {
+                  setAttachment(file);
+                  setPreviewUrl(URL.createObjectURL(file));
+                }
+                e.target.value = ""; 
+              }} />}
+              {!isRecording && <button type="button" onClick={() => fileRef.current?.click()} aria-label="Attach prescription" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-muted"><Paperclip size={20} /></button>}
+              {isRecording ? (<AudioVisualizer isRecording={isRecording} />) : (
+                <textarea ref={inputRef} rows={1} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }} placeholder="Message Phantom…" aria-label="Message" className="max-h-32 min-h-11 flex-1 resize-none rounded-2xl border border-indigo/15 bg-background px-4 py-2.5 outline-none focus:border-cyan focus:ring-4 focus:ring-cyan/25" />
+              )}
+              {!isRecording && <PrimaryButton type="submit" disabled={busy !== "idle" || (!input.trim() && !attachment)} aria-label="Send" className="h-11 w-11 shrink-0 rounded-full p-0"><Send size={18} /></PrimaryButton>}
+            </div>
+          </form>
         <p className="mt-2 text-center text-[11px] text-muted-foreground">Phantom is not a substitute for a doctor. For serious symptoms, see a professional.</p>
       </div>
     </div>
@@ -423,4 +486,39 @@ function VoiceButton({ onText, isRecording, setIsRecording }: { onText: (t: stri
   );
 }
 
+function SpeakMessageButton({ text }: { text: string }) {
+  const [speaking, setSpeaking] = useState(false);
 
+  function toggleSpeech() {
+    if (speaking) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    window.speechSynthesis.cancel();
+    
+    // Auto-detect Tamil vs English
+    const isTamil = /[\u0B80-\u0BFF]/.test(text);
+    
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = isTamil ? "ta-IN" : "en-US";
+    
+    u.onend = () => setSpeaking(false);
+    u.onerror = () => setSpeaking(false);
+    
+    setSpeaking(true);
+    window.speechSynthesis.speak(u);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (speaking) window.speechSynthesis.cancel();
+    };
+  }, [speaking]);
+
+  return (
+    <button onClick={toggleSpeech} aria-label={speaking ? "Stop speaking" : "Speak message"} className="mt-1 rounded p-1.5 hover:bg-muted text-muted-foreground opacity-50 hover:opacity-100 transition-opacity">
+      {speaking ? <VolumeX size={16} /> : <Volume2 size={16} />}
+    </button>
+  );
+}
