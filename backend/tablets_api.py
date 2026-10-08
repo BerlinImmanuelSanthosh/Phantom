@@ -124,6 +124,7 @@ OCR TEXT:
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=1000,
+                response_format={"type": "json_object"}
             )
             content = response.choices[0].message.content or ""
             print(f"Groq response: {content[:500]}")
@@ -139,10 +140,17 @@ OCR TEXT:
             raise HTTPException(status_code=503, detail=OFFLINE_ERROR)
 
     try:
+        content = content.strip()
+        if not content:
+            raise ValueError("Received an empty response from the AI model")
+
         # Strip out markdown json blocks if model wrapped them
         match = re.search(r'\{[\s\S]*\}', content)
         if match:
             content = match.group(0)
+            
+        if not content:
+             raise ValueError("Could not extract JSON object from the AI response")
 
         parsed = json.loads(content)
 

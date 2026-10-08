@@ -70,11 +70,17 @@ def language_instruction(language: Optional[str]) -> str:
     lang = (language or "en").lower()
     if lang.startswith("ta"):
         return (
-            "\nLanguage: reply entirely in Tamil (தமிழ்), written in Tamil script. "
+            "\nLanguage: You are bilingual in English and Tamil. The user has set Tamil as their primary language. "
+            "Reply entirely in Tamil (தமிழ்), written in Tamil script. "
             "Keep medicine names, units (mg, kcal, mmHg) and numbers in their usual form. "
             "Important: Do not translate the name 'Phantom', keep it as 'Phantom' in English."
         )
-    return "\nLanguage: reply entirely in English, regardless of the language used in previous messages."
+    return (
+        "\nLanguage: You are bilingual in English and Tamil. "
+        "The user has set English as their primary language, so reply in English by default. "
+        "HOWEVER, if the user explicitly asks you to speak in Tamil (e.g., 'tamil la sollu', 'speak in tamil') "
+        "or if their message is primarily in Tamil, you MUST reply in Tamil (தமிழ்) using Tamil script."
+    )
 
 
 class Message(BaseModel):
