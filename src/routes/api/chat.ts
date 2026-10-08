@@ -19,6 +19,41 @@ export const Route = createFileRoute("/api/chat")({
         const supabase = userClient(token);
         const { data: u, error } = await supabase.auth.getUser(token);
         if (error || !u.user) return new Response("Unauthorized", { status: 401 });
+        const requestUrl = new URL(request.url);
+        if (requestUrl.searchParams.get("operation") === "transcribe") {
+          const contentLength = Number(request.headers.get("content-length") ?? 0);
+          if (Number.isFinite(contentLength) && contentLength > 20_000_000) {
+            return Response.json({ detail: "Audio recording is too large." }, { status: 413 });
+          }
+          const backendUrls = [process.env["BACKEND_URL"], "http://127.0.0.1:8000", "http://localhost:8000"].filter(Boolean) as string[];
+          const audio = await request.arrayBuffer();
+          for (const baseUrl of backendUrls) {
+            try {
+              const res = await fetch(
+                `${baseUrl.replace(/\/+$/, "")}/api/chat/transcribe?language=${encodeURIComponent(requestUrl.searchParams.get("language") ?? "en")}`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": request.headers.get("content-type") ?? "application/octet-stream" },
+                  body: audio,
+                  signal: request.signal,
+                },
+              );
+              if (res.ok) {
+                return new Response(res.body, {
+                  headers: { "Content-Type": res.headers.get("content-type") ?? "application/json", "Cache-Control": "no-store" },
+                });
+              }
+              if (res.status !== 404 && res.status !== 503) {
+                return new Response(res.body, { status: res.status, headers: { "Content-Type": res.headers.get("content-type") ?? "application/json" } });
+              }
+              console.warn(`[/api/chat] Transcription backend unavailable at ${baseUrl}: ${res.status}`);
+            } catch (error) {
+              if (request.signal.aborted) throw error;
+              console.warn(`[/api/chat] Transcription backend unreachable at ${baseUrl}:`, error);
+            }
+          }
+          return Response.json({ detail: "Voice transcription is unavailable. Configure DEEPGRAM_API_KEY and start the backend." }, { status: 503 });
+        }
         const parsed = Body.safeParse(await request.json().catch(() => null));
         if (!parsed.success) return new Response("Invalid request", { status: 400 });
         const { mode, messages, ingredients, language, prescription_context } = parsed.data;
@@ -51,8 +86,8 @@ export const Route = createFileRoute("/api/chat")({
                 signal: request.signal,
               });
               
-              if (response.ok && response.body) {
-                return new Response(response.body, {
+              if (res.ok && res.body) {
+                return new Response(res.body, {
                   headers: {
                     "Content-Type": "text/plain; charset=utf-8",
                     "X-Accel-Buffering": "no",

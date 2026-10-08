@@ -1,7 +1,8 @@
 import os
 import json
+import asyncio
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
@@ -11,9 +12,9 @@ import httpx
 from groq import Groq
 
 try:
-    from backend.config import GROQ_MODEL_CHAT as MODEL_NAME, GROQ_MODEL_RAG as RAG_MODEL_NAME, GROQ_API_KEY_CHAT
+    from backend.config import GROQ_MODEL_CHAT as MODEL_NAME, GROQ_MODEL_RAG as RAG_MODEL_NAME, GROQ_API_KEY_CHAT, DEEPGRAM_API_KEY
 except ModuleNotFoundError:
-    from config import GROQ_MODEL_CHAT as MODEL_NAME, GROQ_MODEL_RAG as RAG_MODEL_NAME, GROQ_API_KEY_CHAT
+    from config import GROQ_MODEL_CHAT as MODEL_NAME, GROQ_MODEL_RAG as RAG_MODEL_NAME, GROQ_API_KEY_CHAT, DEEPGRAM_API_KEY
 
 router = APIRouter(prefix="/chat", tags=["Chat Mode"])
 logger = logging.getLogger("phantom.chat")
@@ -282,6 +283,80 @@ def chat_stream(req: ChatRequest):
             "Transfer-Encoding": "chunked",
         },
     )
+
+
+@router.post("/transcribe")
+async def transcribe_audio(request: Request, language: str = "en"):
+    if not DEEPGRAM_API_KEY:
+        raise HTTPException(status_code=503, detail="Voice fallback is unavailable because DEEPGRAM_API_KEY is not configured.")
+
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if not media_type.startswith("audio/") and media_type != "application/octet-stream":
+        raise HTTPException(status_code=415, detail="Expected an audio recording.")
+
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > 20_000_000:
+                raise HTTPException(status_code=413, detail="Audio recording is too large.")
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail="Invalid content length.") from error
+
+    audio = await request.body()
+    if not audio:
+        raise HTTPException(status_code=400, detail="Audio recording is empty.")
+    if len(audio) > 20_000_000:
+        raise HTTPException(status_code=413, detail="Audio recording is too large.")
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
+            async def transcribe(candidate_language: str):
+                return await client.post(
+                    "https://api.deepgram.com/v1/listen",
+                    params={"model": "nova-3", "language": candidate_language, "smart_format": "true"},
+                    headers={
+                        "Authorization": f"Token {DEEPGRAM_API_KEY}",
+                        "Content-Type": media_type,
+                    },
+                    content=audio,
+                )
+
+            responses = await asyncio.gather(transcribe("en"), transcribe("ta"), return_exceptions=True)
+    except httpx.RequestError as error:
+        logger.warning("Deepgram transcription request failed: %s", error)
+        raise HTTPException(status_code=502, detail="Could not reach the speech transcription service.") from error
+
+    candidates = []
+    successful_transcriptions = 0
+    for candidate_language, response in zip(("en", "ta"), responses):
+        if isinstance(response, Exception):
+            logger.warning("Deepgram %s transcription failed: %s", candidate_language, response)
+            continue
+        if response.is_error:
+            logger.warning("Deepgram %s transcription returned status %s", candidate_language, response.status_code)
+            continue
+        successful_transcriptions += 1
+        try:
+            alternative = response.json()["results"]["channels"][0]["alternatives"][0]
+            transcript = alternative["transcript"].strip()
+            confidence = float(alternative.get("confidence", 0))
+        except (ValueError, KeyError, IndexError, TypeError) as error:
+            logger.warning("Deepgram %s transcription returned an invalid response: %s", candidate_language, error)
+            continue
+        if transcript:
+            contains_tamil = any("\u0b80" <= character <= "\u0bff" for character in transcript)
+            candidates.append((candidate_language, transcript, confidence, contains_tamil))
+
+    if not successful_transcriptions:
+        raise HTTPException(status_code=502, detail="The speech transcription service could not process the recording.")
+    if not candidates:
+        raise HTTPException(status_code=422, detail="No speech was detected. Please try again.")
+
+    tamil_candidates = [candidate for candidate in candidates if candidate[3]]
+    language, transcript, _, _ = max(tamil_candidates or candidates, key=lambda candidate: candidate[2])
+    if tamil_candidates:
+        language = "ta"
+    return {"text": transcript, "language": language}
 
 
 class VoiceRequest(BaseModel):

@@ -9,8 +9,12 @@ export function useProfile() {
   return useQuery({
     queryKey: ["profile", uid],
     enabled: !!uid,
-    queryFn: async () => {
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", uid!).maybeSingle();
+    staleTime: 60_000,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const timeout = AbortSignal.timeout(8_000);
+      const requestSignal = AbortSignal.any([signal, timeout]);
+      const { data, error } = await supabase.from("profiles").select("*").eq("id", uid!).abortSignal(requestSignal).maybeSingle();
       if (error) throw error;
       return (data as unknown as Profile) ?? null;
     },

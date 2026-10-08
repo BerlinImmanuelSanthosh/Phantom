@@ -9,7 +9,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ session: null, loading: true });
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => setState({ session, loading: false }));
-    supabase.auth.getSession().then(({ data }) => setState({ session: data.session, loading: false }));
+    supabase.auth.getSession()
+      .then(({ data, error }) => {
+        if (error) console.error("[auth] Couldn't restore the saved session:", error);
+        setState((current) => ({ session: current.session ?? data.session, loading: false }));
+      })
+      .catch((error: unknown) => {
+        console.error("[auth] Couldn't restore the saved session:", error);
+        setState((current) => ({ ...current, loading: false }));
+      });
     return () => sub.subscription.unsubscribe();
   }, []);
   return <Ctx.Provider value={state}>{children}</Ctx.Provider>;

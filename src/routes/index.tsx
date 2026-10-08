@@ -1,8 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
-import { Logo, MeshBackground } from "@/components/phantom/ui";
+import { useEffect, useRef, useState } from "react";
+import { Logo, MeshBackground, PrimaryButton } from "@/components/phantom/ui";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";
 import { ease } from "@/lib/motion";
@@ -23,17 +23,46 @@ function Splash() {
   const nav = useNavigate();
   const { session, loading } = useAuth();
   const profile = useProfile();
-  const [done, setDone] = useState(false);
+  const signInAttempted = useRef(false);
+  const [startupError, setStartupError] = useState<string | null>(null);
+
   useEffect(() => {
-    const t = setTimeout(() => setDone(true), 1500);
-    return () => clearTimeout(t);
-  }, []);
-  useEffect(() => {
-    if (!done || loading) return;
-    if (!session) return void supabase.auth.signInAnonymously();
+    if (loading || startupError) return;
+    if (!session) {
+      if (signInAttempted.current) return;
+      signInAttempted.current = true;
+      void supabase.auth.signInAnonymously().then(({ error }) => {
+        if (error) {
+          console.error("[startup] Anonymous sign-in failed:", error);
+          setStartupError("Could not connect to your account. Check your connection and try again.");
+        }
+      }).catch((error: unknown) => {
+        console.error("[startup] Anonymous sign-in failed:", error);
+        setStartupError("Could not connect to your account. Check your connection and try again.");
+      });
+      return;
+    }
+    if (profile.isError) {
+      setStartupError("Could not load your profile. Check your connection and try again.");
+      return;
+    }
     if (profile.isLoading) return;
     nav({ to: profile.data?.onboarding_complete ? "/dashboard" : "/onboarding", replace: true });
-  }, [done, loading, session, profile.isLoading, profile.data, nav]);
+  }, [loading, session, profile.isLoading, profile.isError, profile.data, nav, startupError]);
+
+  async function retryStartup() {
+    setStartupError(null);
+    if (!session) {
+      signInAttempted.current = false;
+      return;
+    }
+    try {
+      await profile.refetch();
+    } catch (error) {
+      console.error("[startup] Profile retry failed:", error);
+      setStartupError("Could not load your profile. Check your connection and try again.");
+    }
+  }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center">
@@ -49,6 +78,12 @@ function Splash() {
       <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }} className="mt-2 text-sm text-muted-foreground">
         Your quiet health companion
       </motion.p>
+      {startupError && (
+        <div role="alert" className="mt-6 flex max-w-sm flex-col items-center gap-3 text-center">
+          <p className="text-sm text-destructive">{startupError}</p>
+          <PrimaryButton onClick={() => void retryStartup()}>Try again</PrimaryButton>
+        </div>
+      )}
     </main>
   );
 }

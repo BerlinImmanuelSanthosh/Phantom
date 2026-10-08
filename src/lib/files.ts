@@ -37,33 +37,36 @@ export function setLanguage(lang: Language) {
   }
 }
 
-/** Reads a plain-text streaming body, reporting the full text so far after every chunk.
- *  When a reasoning model sends the whole response in one large chunk we drip it out
- *  word-by-word so the UI always shows a smooth streaming effect. */
+/** Reads a plain-text stream and reports accumulated text at most once per animation frame. */
 async function readTextStream(stream: ReadableStream<Uint8Array>, onChunk: (full: string) => void) {
   const reader = stream.getReader();
   const dec = new TextDecoder();
   let full = "";
+  let lastReported = "";
+  let pendingFrame: number | null = null;
+
+  function report() {
+    pendingFrame = null;
+    if (lastReported === full) return;
+    lastReported = full;
+    onChunk(full);
+  }
 
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      full += dec.decode();
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+      report();
+      break;
+    }
 
     const incoming = dec.decode(value, { stream: true });
-
-    // Reasoning models (like gpt-oss-20b) batch their entire response into
-    // one or two large chunks. Drip those out word-by-word so the UI streams.
-    const words = incoming.split(/(\s+)/); // keep whitespace tokens
-    if (words.length > 20) {
-      for (const word of words) {
-        full += word;
-        onChunk(full);
-        // ~5ms per token — fast enough to feel live without flickering
-        await new Promise<void>((r) => setTimeout(r, 5));
-      }
-    } else {
-      full += incoming;
-      onChunk(full);
+    full += incoming;
+    if (pendingFrame === null && typeof requestAnimationFrame === "function") {
+      pendingFrame = requestAnimationFrame(report);
+    } else if (typeof requestAnimationFrame !== "function") {
+      queueMicrotask(report);
     }
   }
   return full;
@@ -71,7 +74,8 @@ async function readTextStream(stream: ReadableStream<Uint8Array>, onChunk: (full
 
 export async function streamChat(body: Record<string, unknown>, onChunk: (full: string) => void, signal?: AbortSignal) {
   const { supabase } = await import("@/integrations/supabase/client");
-  const language = getLanguage();
+  const requestedLanguage = body["language"];
+  const language: Language = requestedLanguage === "ta" || requestedLanguage === "en" ? requestedLanguage : getLanguage();
 
   // For food mode, try the dedicated foodmaker backend chat endpoint first
   if (body["mode"] === "food") {
@@ -90,18 +94,7 @@ export async function streamChat(body: Record<string, unknown>, onChunk: (full: 
           body: JSON.stringify(foodBody),
           ...(signal ? { signal } : {}),
         });
-        if (res.ok && res.body) {
-          const reader = res.body.getReader();
-          const dec = new TextDecoder();
-          let full = "";
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            full += dec.decode(value, { stream: true });
-            onChunk(full);
-          }
-          return full;
-        }
+        if (res.ok && res.body) return await readTextStream(res.body, onChunk);
       } catch {
         // backend not available, fall through to TanStack route
       }

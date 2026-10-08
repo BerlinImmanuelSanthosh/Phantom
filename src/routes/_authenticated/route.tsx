@@ -32,6 +32,7 @@ function Shell() {
 
   useEffect(() => {
     if (!loading && !session) nav({ to: "/", replace: true });
+    else if (profile.isSuccess && !profile.data) nav({ to: "/onboarding", replace: true });
     else if (profile.data && !profile.data.onboarding_complete) nav({ to: "/onboarding", replace: true });
   }, [loading, session, profile.data, nav]);
 
@@ -86,6 +87,18 @@ function Shell() {
               <Outlet />
             </motion.div>
           </AnimatePresence>
+          ) : profile.isError ? (
+            <div role="alert" className="mx-auto flex max-w-md flex-col items-center gap-3 rounded-2xl border border-destructive/30 bg-background/90 p-6 text-center">
+              <p className="font-semibold">Could not load your profile</p>
+              <p className="text-sm text-muted-foreground">Check your connection and try again.</p>
+              <button
+                type="button"
+                onClick={() => void profile.refetch()}
+                className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+              >
+                Try again
+              </button>
+            </div>
           ) : (
             <div className="space-y-4">
               <Skeleton className="h-12 w-64" />

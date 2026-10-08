@@ -9,10 +9,20 @@ import { Mic, MicOff, Paperclip, Phone, Send, Siren, FileText, Check, Trash2, Ph
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Logo, PrimaryButton, GhostButton } from "@/components/phantom/ui";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useCall } from "@/components/phantom/CallProvider";
 import { useProfile } from "@/hooks/useProfile";
 import { scanPrescription, type Prescription } from "@/lib/ai.functions";
-import { EMERGENCY_RE, fileToPayload, streamChat } from "@/lib/files";
+import { EMERGENCY_RE, fileToPayload, getLanguage, streamChat, type Language } from "@/lib/files";
 
 export const Route = createFileRoute("/_authenticated/chat")({
   head: () => ({
@@ -130,6 +140,8 @@ function Chat() {
   const [isRecording, setIsRecording] = useState(false);
   const [local, setLocal] = useState<Msg[]>([]);
   const [busy, setBusy] = useState<"idle" | "typing" | "streaming" | "scanning">("idle");
+  const [clearingChat, setClearingChat] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [voiceAgent, setVoiceAgent] = useState<{ active: boolean; mode: "sos" | "pharmacy"; roomUrl?: string | null }>({ active: false, mode: "sos" });
   const [attachment, setAttachment] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -150,13 +162,13 @@ function Chat() {
   const msgs = [...(history.data ?? []), ...local];
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    endRef.current?.scrollIntoView({ behavior: busy === "streaming" ? "auto" : "smooth", block: "end" });
   }, [msgs.length, local.at(-1)?.content, busy]);
   useEffect(() => inputRef.current?.focus(), [busy]);
 
   const [streamingId, setStreamingId] = useState<string | null>(null);
 
-  async function send(text: string) {
+  async function send(text: string, responseLanguage: Language = getLanguage()) {
     const t = text.trim();
     if ((!t && !attachment) || busy !== "idle") return;
     setInput("");
@@ -169,17 +181,22 @@ function Chat() {
 
     let userMsg: Msg | null = null;
     let saved = true;
+    let saveUserMessage: Promise<void> | null = null;
 
     if (t || currentAttachment) {
       const displayContent = currentAttachment ? (t ? `${t}\n\n📎 ${currentAttachment.name}` : `📎 ${currentAttachment.name}`) : t;
       userMsg = { id: crypto.randomUUID(), role: "user", content: displayContent };
       const extra: Msg[] = EMERGENCY_RE.test(t) ? [{ id: crypto.randomUUID(), role: "assistant", content: "", kind: "emergency" }] : [];
       setLocal((l) => [...l, userMsg!, ...extra]);
-      const { error: e1 } = await supabase.from("chat_messages").insert({ role: "user", content: displayContent });
-      if (e1) {
-        console.error(e1);
+      saveUserMessage = Promise.resolve(supabase.from("chat_messages").insert({ role: "user", content: displayContent })).then(({ error }) => {
+        if (error) {
+          console.error(error);
+          saved = false;
+        }
+      }).catch((error: unknown) => {
+        console.error(error);
         saved = false;
-      }
+      });
     }
 
     if (currentAttachment) {
@@ -215,11 +232,12 @@ function Chat() {
         if (userMsg) convo.push({ role: "user", content: t ? `I have uploaded a prescription with this message: "${t}". Please explain the purpose of each tablet.` : "I have uploaded a prescription. Please explain the purpose of each tablet and why I should take them. Give a brief breakdown." });
         setBusy("typing");
         try {
-          const full = await streamChat({ mode: "health", messages: convo, prescription_context: JSON.stringify(parsedRx) }, (txt) => {
+          const full = await streamChat({ mode: "health", messages: convo, prescription_context: JSON.stringify(parsedRx), language: responseLanguage }, (txt) => {
             setBusy("streaming");
             setStreamingId(aid);
             setLocal((l) => (l.some((m) => m.id === aid) ? l.map((m) => (m.id === aid ? { ...m, content: txt } : m)) : [...l, { id: aid, role: "assistant", content: txt }]));
           });
+          await saveUserMessage;
           if (full.trim()) {
             await supabase.from("chat_messages").insert({ role: "assistant", content: full });
           }
@@ -237,11 +255,13 @@ function Chat() {
     const aid = crypto.randomUUID();
     const lastRx = local.slice().reverse().find((m) => m.kind === "rx" && m.rx);
     try {
-      const full = await streamChat({ mode: "health", messages: convo, prescription_context: lastRx ? JSON.stringify(lastRx.rx) : undefined }, (txt) => {
+      setBusy("typing");
+      const full = await streamChat({ mode: "health", messages: convo, prescription_context: lastRx ? JSON.stringify(lastRx.rx) : undefined, language: responseLanguage }, (txt) => {
         setBusy("streaming");
         setStreamingId(aid);
         setLocal((l) => (l.some((m) => m.id === aid) ? l.map((m) => (m.id === aid ? { ...m, content: txt } : m)) : [...l, { id: aid, role: "assistant", content: txt }]));
       });
+      await saveUserMessage;
       if (full.trim()) {
         const { error: e2 } = await supabase.from("chat_messages").insert({ role: "assistant", content: full });
         if (e2) {
@@ -250,10 +270,11 @@ function Chat() {
         }
       }
       if (saved) {
-        await qc.invalidateQueries({ queryKey: ["chat"] });
+        qc.setQueryData<Msg[]>(["chat"], (previous) => [...(previous ?? []), ...(userMsg ? [userMsg] : []), ...(full.trim() ? [{ id: aid, role: "assistant" as const, content: full }] : [])]);
         setLocal((l) => l.filter((m) => m.kind));
       }
     } catch (e) {
+      await saveUserMessage;
       toast.error((e as Error).message);
     }
     setStreamingId(null);
@@ -268,9 +289,23 @@ function Chat() {
   }
 
   async function clearChat() {
-    await supabase.from("chat_messages").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    setLocal([]);
-    qc.invalidateQueries({ queryKey: ["chat"] });
+    setClearingChat(true);
+    const previousHistory = history.data ?? [];
+    const previousLocal = local;
+    try {
+      const { error } = await supabase.from("chat_messages").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      if (error) throw error;
+      qc.setQueryData<Msg[]>(["chat"], []);
+      setLocal([]);
+      setDeleteDialogOpen(false);
+      toast.success("Chat history deleted");
+    } catch (error) {
+      qc.setQueryData(["chat"], previousHistory);
+      setLocal(previousLocal);
+      toast.error(error instanceof Error ? error.message : "Couldn't delete chat history");
+    } finally {
+      setClearingChat(false);
+    }
   }
 
   function handleCallClick() {
@@ -318,10 +353,42 @@ function Chat() {
           </motion.div>
         )}
       </AnimatePresence>
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete chat history?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes your saved chat messages. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clearingChat}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={clearingChat}
+              onClick={(event) => {
+                event.preventDefault();
+                void clearChat();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {clearingChat ? "Deleting…" : "Delete chat"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <header className="flex items-center gap-3 border-b border-cyan/20 px-4 py-3">
         <motion.div animate={{ scale: [1, 1.06, 1] }} transition={{ duration: 3, repeat: Infinity }}><Logo size={36} /></motion.div>
         <div className="flex-1"><h1 className="text-lg font-bold">Phantom</h1><p className="text-xs text-muted-foreground">Knows your profile, vitals and tablets</p></div>
-        <button onClick={clearChat} aria-label="Clear chat" className="rounded-full p-2 hover:bg-muted"><Trash2 size={18} /></button>
+        <button
+          type="button"
+          onClick={() => setDeleteDialogOpen(true)}
+          disabled={busy !== "idle" || clearingChat}
+          aria-label="Delete chat history"
+          title="Delete chat history"
+          className="flex h-11 w-11 items-center justify-center rounded-full border border-destructive/30 bg-destructive/10 text-destructive transition-colors hover:bg-destructive/20 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Trash2 size={18} />
+        </button>
         <motion.button whileTap={{ scale: 0.92 }} onClick={handleCallClick} aria-label="Call Voice Agent" className="pulse-glow flex h-11 w-11 items-center justify-center rounded-full bg-primary"><Phone size={20} /></motion.button>
       </header>
 
@@ -395,7 +462,7 @@ function Chat() {
             </div>
           )}
           <div className="flex items-end gap-2 w-full">
-              <VoiceButton onText={(t) => { setInput(''); send(t); }} isRecording={isRecording} setIsRecording={setIsRecording} />
+              <VoiceButton onText={(t, language) => send(t, language)} isRecording={isRecording} setIsRecording={setIsRecording} />
               {!isRecording && <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => { 
                 const file = e.target.files?.[0];
                 if (file) {
@@ -461,24 +528,97 @@ function RxCard({ rx }: { rx: Prescription }) {
   );
 }
 
-type SR = { start: () => void; stop: () => void; onresult: (e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void; onend: () => void; interimResults: boolean; lang: string };
+function VoiceButton({ onText, isRecording, setIsRecording }: { onText: (t: string, language: Language) => void, isRecording: boolean, setIsRecording: (v: boolean) => void }) {
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<BlobPart[]>([]);
+  const transcriptionPendingRef = useRef(false);
 
-function VoiceButton({ onText, isRecording, setIsRecording }: { onText: (t: string) => void, isRecording: boolean, setIsRecording: (v: boolean) => void }) {
-  const rec = useRef<SR | null>(null);
-  function toggle() {
-    const W = window as unknown as { SpeechRecognition?: new () => SR; webkitSpeechRecognition?: new () => SR };
-    const Ctor = W.SpeechRecognition ?? W.webkitSpeechRecognition;
-    if (!Ctor) return toast.error("Voice input isn't supported in this browser");
-    if (isRecording) return rec.current?.stop();
-    const r = new Ctor();
-    r.lang = navigator.language || "en-US";
-    r.interimResults = false;
-    r.onresult = (e) => onText(Array.from(e.results).map((x) => x[0]!.transcript).join(" "));
-    r.onend = () => setIsRecording(false);
-    rec.current = r;
-    r.start();
-    setIsRecording(true);
+  async function transcribeAudio(audio: Blob) {
+    toast.loading("Transcribing voice…", { id: "voice-transcription" });
+    try {
+      if (!audio?.size) throw new Error("Audio could not be recorded. Check microphone access and try again.");
+      const { data } = await supabase.auth.getSession();
+      const response = await fetch("/api/chat?operation=transcribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": audio.type || "application/octet-stream",
+          Authorization: `Bearer ${data.session?.access_token ?? ""}`,
+        },
+        body: audio,
+      });
+      const result = await response.json().catch(() => null) as { text?: string; language?: Language; detail?: string } | null;
+      if (!response.ok) throw new Error(result?.detail ?? "Voice transcription failed. Please try again.");
+      const text = result?.text?.trim();
+      if (!text) throw new Error("No speech was detected. Please try again.");
+      toast.dismiss("voice-transcription");
+      const responseLanguage = result?.language === "ta" || /[\u0B80-\u0BFF]/.test(text) ? "ta" : "en";
+      onText(text, responseLanguage);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Voice transcription failed. Please try again.", { id: "voice-transcription" });
+    } finally {
+      transcriptionPendingRef.current = false;
+      setIsRecording(false);
+    }
   }
+
+  function stopRecording() {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive" || transcriptionPendingRef.current) return;
+    transcriptionPendingRef.current = true;
+    recorder.onstop = () => {
+      const audio = new Blob(audioChunksRef.current, { type: recorder.mimeType });
+      audioChunksRef.current = [];
+      audioStreamRef.current?.getTracks().forEach((track) => track.stop());
+      audioStreamRef.current = null;
+      mediaRecorderRef.current = null;
+      void transcribeAudio(audio);
+    };
+    recorder.stop();
+  }
+
+  function toggle() {
+    if (isRecording) {
+      stopRecording();
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      toast.error("Voice recording isn't supported in this browser");
+      return;
+    }
+
+    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus", "audio/ogg"]
+        .find((type) => MediaRecorder.isTypeSupported(type));
+      try {
+        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        audioStreamRef.current = stream;
+        audioChunksRef.current = [];
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) audioChunksRef.current.push(event.data);
+        };
+        recorder.onerror = () => {
+          stream.getTracks().forEach((track) => track.stop());
+          audioStreamRef.current = null;
+          mediaRecorderRef.current = null;
+          setIsRecording(false);
+          toast.error("Couldn't record audio. Check microphone access and try again.");
+        };
+        recorder.start(250);
+        mediaRecorderRef.current = recorder;
+        setIsRecording(true);
+      } catch (error) {
+        stream.getTracks().forEach((track) => track.stop());
+        console.error("[voice] Audio recorder failed to start:", error);
+        toast.error("Couldn't start voice recording in this browser.");
+      }
+    }).catch((error: unknown) => {
+      console.error("[voice] Microphone access failed:", error);
+      toast.error("Microphone access was denied. Allow it in browser settings.");
+    });
+  }
+
   return (
     <button type="button" onClick={toggle} aria-label={isRecording ? "Stop voice input" : "Voice input"} aria-pressed={isRecording} className={`flex h-11 shrink-0 items-center justify-center gap-0.5 rounded-full px-3 ${isRecording ? "bg-secondary" : "hover:bg-muted"}`}>
       {isRecording ? <Send size={20} /> : <Mic size={20} />}
