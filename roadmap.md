@@ -1,5 +1,10 @@
 # Phantom roadmap
 
+- [ ] Fix missing browser connection settings and verify the generated client initializes
+
+- [x] Optimize shared animations, page changes, buttons, chat scrolling and photo-reader loading; navigation test and reduced-motion splash check passed
+- [ ] Verify signed-in page transitions in the live preview — blocked by unavailable authorized session; user must sign in
+
 - [x] Design system, no-login start, splash, 6-step onboarding, setup sequence
 - [x] Dashboard: health score, AI insight, stats, trends, water, log vitals, quick actions
 - [x] Tablets: timetable, mark taken, add/delete, table, daily adherence

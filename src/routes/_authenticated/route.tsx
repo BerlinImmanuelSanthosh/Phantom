@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { LayoutDashboard, MessageCircle, ChefHat, Pill, Settings, Bell, Languages } from "lucide-react";
 import { toast } from "sonner";
-import { Logo, MeshBackground, Skeleton } from "@/components/phantom/ui";
+import { GhostButton, Logo, MeshBackground, Skeleton } from "@/components/phantom/ui";
 import { CallProvider, SosButton } from "@/components/phantom/CallProvider";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";
@@ -34,7 +34,7 @@ function Shell() {
     if (!loading && !session) nav({ to: "/", replace: true });
     else if (profile.isSuccess && !profile.data) nav({ to: "/onboarding", replace: true });
     else if (profile.data && !profile.data.onboarding_complete) nav({ to: "/onboarding", replace: true });
-  }, [loading, session, profile.data, nav]);
+  }, [loading, session, profile.data, profile.isSuccess, nav]);
 
   const ready = session && profile.data?.onboarding_complete;
 
@@ -75,18 +75,15 @@ function Shell() {
             )}
           </div>
           {ready ? (
-          <AnimatePresence mode="popLayout">
             <motion.div
               key={pathname}
               variants={page}
               initial="initial"
               animate="animate"
-              exit="exit"
-              style={{ willChange: "opacity, transform" }}
+              className="min-w-0"
             >
               <Outlet />
             </motion.div>
-          </AnimatePresence>
           ) : profile.isError ? (
             <div role="alert" className="mx-auto flex max-w-md flex-col items-center gap-3 rounded-2xl border border-destructive/30 bg-background/90 p-6 text-center">
               <p className="font-semibold">Could not load your profile</p>
@@ -208,8 +205,8 @@ function LanguageButton() {
   }
 
   return (
-    <button onClick={toggle} aria-label={`Switch to ${lang === "en" ? "Tamil" : "English"}`} className="glass flex h-12 w-12 items-center justify-center rounded-full font-bold text-sm text-foreground hover:bg-muted transition-colors notranslate">
+    <GhostButton onClick={toggle} aria-label={`Switch to ${lang === "en" ? "Tamil" : "English"}`} className="glass h-12 w-12 rounded-full p-0 font-bold text-sm text-foreground hover:bg-muted notranslate">
       {lang === "en" ? "EN" : "தமிழ்"}
-    </button>
+    </GhostButton>
   );
 }

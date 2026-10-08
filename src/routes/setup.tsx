@@ -14,6 +14,8 @@ export const Route = createFileRoute("/setup")({
       { name: "description", content: "Phantom is preparing your personalised health dashboard." },
       { property: "og:title", content: "Setting up your Phantom" },
       { property: "og:description", content: "Phantom is preparing your personalised health dashboard." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Setup,

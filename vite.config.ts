@@ -5,6 +5,17 @@
 //     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import { loadEnv } from "vite";
+
+// Only these public values may be embedded in browser code. Keep server secrets
+// out of define: production previews must not depend on runtime process.env.
+const publicEnv = loadEnv(process.env.NODE_ENV === "production" ? "production" : "development", process.cwd(), "VITE_");
+const publicConnectionDefines = Object.fromEntries(
+  ["VITE_SUPABASE_URL", "VITE_SUPABASE_PUBLISHABLE_KEY", "VITE_SUPABASE_PROJECT_ID"].map((key) => [
+    `import.meta.env.${key}`,
+    JSON.stringify(process.env[key] || publicEnv[key] || ""),
+  ]),
+);
 
 export default defineConfig({
   tanstackStart: {
@@ -13,6 +24,7 @@ export default defineConfig({
     server: { entry: "server" },
   },
   vite: {
+    define: publicConnectionDefines,
     server: {
       host: "0.0.0.0",
       port: 8080,

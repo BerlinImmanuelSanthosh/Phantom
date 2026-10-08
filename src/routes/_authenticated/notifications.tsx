@@ -14,6 +14,8 @@ export const Route = createFileRoute("/_authenticated/notifications")({
       { name: "description", content: "Dose reminders, refill and course alerts from Phantom." },
       { property: "og:title", content: "Notifications — Phantom" },
       { property: "og:description", content: "Dose reminders, refill and course alerts from Phantom." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Notifications,

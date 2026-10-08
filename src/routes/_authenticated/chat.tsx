@@ -1,6 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { AnimatePresence, motion } from "framer-motion";
-import Tesseract from "tesseract.js";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -31,6 +30,8 @@ export const Route = createFileRoute("/_authenticated/chat")({
       { name: "description", content: "Talk to Phantom, your AI health assistant." },
       { property: "og:title", content: "Chat — Phantom" },
       { property: "og:description", content: "Talk to Phantom, your AI health assistant." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Chat,
@@ -60,7 +61,7 @@ function AudioVisualizer({ isRecording }: { isRecording: boolean }) {
     timerId = setInterval(() => setTime((t) => t + 1), 1000);
 
     navigator.mediaDevices.getUserMedia({ audio: true }).then((s) => {
-      if (!active) return;
+      if (!active) { s.getTracks().forEach(track => track.stop()); return; }
       stream = s;
       audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const source = audioCtx.createMediaStreamSource(stream);
@@ -69,8 +70,12 @@ function AudioVisualizer({ isRecording }: { isRecording: boolean }) {
       source.connect(analyser);
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       
-      function update() {
+      let lastUpdate = 0;
+      function update(timestamp = 0) {
         if (!active) return;
+         // Sample at 30fps instead of re-rendering the meter on every display frame.
+         if (timestamp - lastUpdate < 33) { raf = requestAnimationFrame(update); return; }
+         lastUpdate = timestamp;
         analyser.getByteTimeDomainData(dataArray);
         
         let isSilent = true;
@@ -132,6 +137,7 @@ function AudioVisualizer({ isRecording }: { isRecording: boolean }) {
 }
 
 function Chat() {
+  const reduce = useReducedMotion();
   const qc = useQueryClient();
   const { openSheet } = useCall();
   const { data: p } = useProfile();
@@ -162,8 +168,12 @@ function Chat() {
   const msgs = [...(history.data ?? []), ...local];
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: busy === "streaming" ? "auto" : "smooth", block: "end" });
-  }, [msgs.length, local.at(-1)?.content, busy]);
+    const frame = requestAnimationFrame(() => {
+      // Token updates must not restart an in-progress smooth scroll.
+      endRef.current?.scrollIntoView({ behavior: reduce || busy === "streaming" ? "auto" : "smooth", block: "end" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [msgs.length, local.at(-1)?.content, busy, reduce]);
   useEffect(() => inputRef.current?.focus(), [busy]);
 
   const [streamingId, setStreamingId] = useState<string | null>(null);
@@ -205,6 +215,7 @@ function Chat() {
       try {
         const { dataUrl } = await fileToPayload(currentAttachment);
         toast.loading("Reading text from image...", { id: "scan" });
+        const { default: Tesseract } = await import("tesseract.js");
         const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng');
         
         if (!text.trim()) throw new Error("No text found");
@@ -402,7 +413,7 @@ function Chat() {
         )}
         <AnimatePresence initial={false}>
           {msgs.map((m) => (
-            <motion.div key={m.id} initial={{ opacity: 0, y: 12, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 380, damping: 28 }} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
+            <motion.div key={m.id} initial={history.data?.some(saved => saved.id === m.id) ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
               {m.kind === "emergency" ? <EmergencyCard onCall={handleCallClick} /> : m.kind === "rx" && m.rx ? <RxCard rx={m.rx} /> : m.role === "user" ? (
                 <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground">{m.content}</div>
               ) : m.id === streamingId ? (

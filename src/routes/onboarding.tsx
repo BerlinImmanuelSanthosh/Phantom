@@ -19,6 +19,8 @@ export const Route = createFileRoute("/onboarding")({
       { name: "description", content: "Tell Phantom about you so every module is personalised." },
       { property: "og:title", content: "Set up your profile — Phantom" },
       { property: "og:description", content: "Tell Phantom about you so every module is personalised." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Onboarding,
