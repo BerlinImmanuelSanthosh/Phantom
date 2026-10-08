@@ -13,6 +13,11 @@ export default defineConfig({
     server: { entry: "server" },
   },
   vite: {
+    server: {
+      host: "0.0.0.0",
+      port: 8080,
+      strictPort: false,
+    },
     optimizeDeps: {
       // Pre-bundle heavy deps so Vite doesn't re-transform them on every cold-start request.
       include: [
