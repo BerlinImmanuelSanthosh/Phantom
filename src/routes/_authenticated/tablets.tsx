@@ -19,6 +19,8 @@ export const Route = createFileRoute("/_authenticated/tablets")({
       { name: "description", content: "Your medicine timetable, dose check-offs and stock." },
       { property: "og:title", content: "Tablets — Phantom" },
       { property: "og:description", content: "Your medicine timetable, dose check-offs and stock." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Tablets,
