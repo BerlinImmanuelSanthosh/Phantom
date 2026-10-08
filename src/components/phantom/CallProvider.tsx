@@ -15,6 +15,7 @@ const label: Record<CallStatus, string> = { connecting: "Connecting…", ringing
 
 export function CallProvider({ children }: { children: ReactNode }) {
   const { data: p } = useProfile();
+  const callerName = p?.full_name ?? undefined;
   const [active, setActive] = useState<{ name: string; phone: string; id?: string } | null>(null);
   const [status, setStatus] = useState<CallStatus>("connecting");
   const [secs, setSecs] = useState(0);
@@ -30,7 +31,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setSecs(0);
     setMuted(false);
     try {
-      const { callId } = await startCall(phone);
+      const { callId } = await startCall(phone, { callerName });
       unsub.current = onCallStatus(callId, (s) => {
         setStatus(s);
         if (s === "ended" || s === "failed") setTimeout(() => setActive(null), 1200);
@@ -40,7 +41,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setStatus("failed");
       setTimeout(() => setActive(null), 1500);
     }
-  }, []);
+  }, [callerName]);
 
   useEffect(() => {
     if (status !== "connected") return;

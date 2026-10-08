@@ -24,11 +24,13 @@ try:
     from backend.chat_api import router as chat_router
     from backend.foodmaker_api import router as foodmaker_router
     from backend.tablets_api import router as tablets_router
+    from backend.calls_api import router as calls_router
 except ModuleNotFoundError:
     from dashboard_api import router as dashboard_router
     from chat_api import router as chat_router
     from foodmaker_api import router as foodmaker_router
     from tablets_api import router as tablets_router
+    from calls_api import router as calls_router
 
 app = FastAPI(
     title="Phantom AI Backend Service",
@@ -50,6 +52,7 @@ app.include_router(dashboard_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
 app.include_router(foodmaker_router, prefix="/api")
 app.include_router(tablets_router, prefix="/api")
+app.include_router(calls_router, prefix="/api")
 
 @app.get("/")
 def root():
