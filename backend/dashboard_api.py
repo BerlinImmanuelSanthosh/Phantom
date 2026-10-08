@@ -11,15 +11,20 @@ try:
 except ModuleNotFoundError:
     from config import GROQ_MODEL_DASHBOARD as MODEL_NAME, GROQ_API_KEY_DASHBOARD
 
+# Offline fallback: reuse the local Ollama helper from chat_api
+try:
+    from backend.chat_api import ollama_stream
+except ModuleNotFoundError:
+    from chat_api import ollama_stream
+
 router = APIRouter(prefix="/dashboard", tags=["Dashboard Mode"])
 
-def get_groq_client() -> Groq:
+def get_groq_client() -> Optional[Groq]:
+    # None when no key is configured: requests then fall through to the local Ollama model.
     if not GROQ_API_KEY_DASHBOARD or "your_groq" in GROQ_API_KEY_DASHBOARD:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="GROQ_API_KEY_DASHBOARD is not configured in backend/.env"
-        )
-    return Groq(api_key=GROQ_API_KEY_DASHBOARD)
+        print("GROQ_API_KEY_DASHBOARD is not configured in backend/.env; using local Ollama", flush=True)
+        return None
+    return Groq(api_key=GROQ_API_KEY_DASHBOARD, timeout=15.0, max_retries=1)
 
 class VitalsInput(BaseModel):
     age: Optional[int] = 30
@@ -91,18 +96,23 @@ Generate a JSON object strictly matching this schema:
 }}
 """
 
+    insight_messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
     try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.4,
-            max_tokens=400,
-        )
-        content = response.choices[0].message.content
+        try:
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=insight_messages,
+                response_format={"type": "json_object"},
+                temperature=0.4,
+                max_tokens=400,
+            )
+            content = response.choices[0].message.content
+        except Exception as cloud_error:
+            print(f"[insight] Groq failed ({cloud_error}), trying local Ollama...", flush=True)
+            content = "".join(ollama_stream(insight_messages, temperature=0.4, max_tokens=500, json_mode=True))
         parsed = json.loads(content)
         
         # Ensure mandatory fields with fallbacks
@@ -251,7 +261,11 @@ Output raw JSON matching this schema:
             )
             content = response.choices[0].message.content or ""
         except Exception as e2:
-            print(f"[card-insight] ❌ Error in backend generation: {e2}")
+            print(f"[card-insight] Groq unavailable ({e2}), trying local Ollama...", flush=True)
+            try:
+                content = "".join(ollama_stream(messages, temperature=0.3, max_tokens=700, json_mode=True))
+            except Exception as e3:
+                print(f"[card-insight] ❌ Error in backend generation: {e3}")
 
     print(f"[card-insight] Groq raw response: {content}")
     parsed = safe_parse_json(content)

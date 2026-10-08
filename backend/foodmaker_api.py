@@ -14,6 +14,12 @@ try:
 except ModuleNotFoundError:
     from config import GROQ_MODEL_FOODMAKER as FOODMAKER_MODEL, GROQ_API_KEY_FOODMAKER
 
+# Offline fallback for food chat: reuse the local Ollama helper from chat_api
+try:
+    from backend.chat_api import ollama_stream, OFFLINE_ERROR, language_instruction
+except ModuleNotFoundError:
+    from chat_api import ollama_stream, OFFLINE_ERROR, language_instruction
+
 # Vision model for food detection (must support image inputs)
 import os
 VISION_MODEL = os.getenv("GROQ_MODEL_FOODMAKER_VISION") or "qwen/qwen3.8-27b"
@@ -395,6 +401,7 @@ class FoodChatRequest(BaseModel):
     messages: List[FoodChatMessage]
     ingredients: Optional[List[str]] = Field(default_factory=list)
     profile_context: Optional[str] = ""
+    language: Optional[str] = "en"  # "en" | "ta"
 
 @router.post("/chat/stream")
 def food_chat_stream(req: FoodChatRequest):
@@ -402,7 +409,11 @@ def food_chat_stream(req: FoodChatRequest):
     Streaming food chat using GROQ_MODEL_FOODMAKER from config.
     Provides kitchen AI advice based on available ingredients and user health profile.
     """
-    client = get_groq_client()
+    # Missing key must not block chat: fall through to the local Ollama model.
+    try:
+        client = get_groq_client().with_options(timeout=15.0, max_retries=1)
+    except HTTPException:
+        client = None
 
     ing_str = ", ".join(req.ingredients) if req.ingredients else "unspecified"
     context_str = req.profile_context or "No specific health profile provided."
@@ -423,11 +434,14 @@ def food_chat_stream(req: FoodChatRequest):
         f"Available fridge ingredients: {ing_str}.\n"
         "Respect the user's diet, allergies, and health conditions (e.g., low glycemic for high blood sugar, low salt for high BP). "
         "FORMATTING RULES — follow strictly:\n"
-        "- NEVER use markdown tables or pipe characters (|). They do not render in this chat.\n"
-        "- List ingredients as simple bullet points: '- ingredient: amount'\n"
+        "- Do NOT output any tables.\n"
+        "- Do NOT use the pipe character (|).\n"
+        "- Do NOT use horizontal lines (---).\n"
+        "- List ingredients and data using simple bullet points: '- ingredient: amount'\n"
         "- List steps as numbered lines: '1. Step description'\n"
         "- Use **bold** for section headings like **Ingredients**, **Instructions**, **Tips**\n"
         "- Keep responses under 220 words. Plain, clear, and easy to read."
+        + language_instruction(req.language)
     )
 
     groq_messages = [{"role": "system", "content": system_prompt}]
@@ -435,6 +449,7 @@ def food_chat_stream(req: FoodChatRequest):
         groq_messages.append({"role": msg.role, "content": msg.content})
 
     def text_generator():
+        started = False
         try:
             stream = client.chat.completions.create(
                 model=FOODMAKER_MODEL,
@@ -446,8 +461,19 @@ def food_chat_stream(req: FoodChatRequest):
             for chunk in stream:
                 delta = chunk.choices[0].delta.content
                 if delta:
+                    started = True
                     yield delta
         except Exception as e:
-            yield f"\n[Error: {str(e)}]"
+            if started:
+                # Cloud reply was already partly sent; cannot switch models mid-answer.
+                yield f"\n[Error: {str(e)}]"
+                return
+            print(f"food chat: Groq failed, trying local Ollama: {e}", flush=True)
+            try:
+                for delta in ollama_stream(groq_messages):
+                    yield delta
+            except Exception as local_error:
+                print(f"food chat: local Ollama failed: {local_error}", flush=True)
+                yield OFFLINE_ERROR
 
     return StreamingResponse(text_generator(), media_type="text/plain")

@@ -66,6 +66,7 @@ function Chat() {
     setBusy("typing");
     const { error: e1 } = await supabase.from("chat_messages").insert({ role: "user", content: t });
     if (e1) console.error(e1);
+    let saved = !e1; // offline: keep the messages on screen when they could not be saved
     const convo = [...(history.data ?? []), ...local.filter((m) => !m.kind), userMsg].slice(-30).map((m) => ({ role: m.role, content: m.content }));
     const aid = crypto.randomUUID();
     try {
@@ -75,10 +76,15 @@ function Chat() {
       });
       if (full.trim()) {
         const { error: e2 } = await supabase.from("chat_messages").insert({ role: "assistant", content: full });
-        if (e2) console.error(e2);
+        if (e2) {
+          console.error(e2);
+          saved = false;
+        }
       }
-      await qc.invalidateQueries({ queryKey: ["chat"] });
-      setLocal((l) => l.filter((m) => m.kind));
+      if (saved) {
+        await qc.invalidateQueries({ queryKey: ["chat"] });
+        setLocal((l) => l.filter((m) => m.kind));
+      }
     } catch (e) {
       toast.error((e as Error).message);
     }

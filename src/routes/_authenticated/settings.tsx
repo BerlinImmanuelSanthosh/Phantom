@@ -1,12 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LogOut, Save } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useInvalidateProfile, useProfile } from "@/hooks/useProfile";
 import { Field, GhostButton, GlassCard, PrimaryButton, inputCls } from "@/components/phantom/ui";
 import { stagger } from "@/lib/motion";
+import { getLanguage, setLanguage, type Language } from "@/lib/files";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
@@ -24,6 +25,8 @@ function Settings() {
   const nav = useNavigate();
   const { data: p } = useProfile();
   const invalidate = useInvalidateProfile();
+  const [lang, setLang] = useState<Language>("en");
+  useEffect(() => setLang(getLanguage()), []);
   const [f, setF] = useState(() => ({
     full_name: p?.full_name ?? "", age: String(p?.age ?? ""), height_cm: String(p?.height_cm ?? ""), weight_kg: String(p?.weight_kg ?? ""),
     goal: p?.goal ?? "maintain", diet: p?.diet ?? "veg", hospital_number: p?.hospital_number ?? "",
@@ -48,6 +51,21 @@ function Settings() {
         <Field label="Goal"><select className={inputCls} value={f.goal} onChange={(e) => setF({ ...f, goal: e.target.value })}><option value="lose">Lose weight</option><option value="gain">Gain weight</option><option value="maintain">Maintain</option></select></Field>
         <Field label="Diet"><select className={inputCls} value={f.diet} onChange={(e) => setF({ ...f, diet: e.target.value })}><option value="veg">Vegetarian</option><option value="non-veg">Non-veg</option><option value="vegan">Vegan</option></select></Field>
         <Field label="Hospital / ambulance number"><input className={inputCls} value={f.hospital_number} onChange={(e) => setF({ ...f, hospital_number: e.target.value })} /></Field>
+        <Field label="Language preference">
+          <select
+            className={inputCls}
+            value={lang}
+            onChange={(e) => {
+              const next = e.target.value as Language;
+              setLang(next);
+              setLanguage(next);
+              toast.success(next === "ta" ? "மொழி தமிழாக மாற்றப்பட்டது" : "Language set to English");
+            }}
+          >
+            <option value="en">English</option>
+            <option value="ta">தமிழ் (Tamil)</option>
+          </select>
+        </Field>
         <div className="flex items-end gap-3">
           <PrimaryButton onClick={save}><Save size={18} /> Save</PrimaryButton>
           <GhostButton onClick={async () => { await supabase.auth.signOut(); nav({ to: "/" }); }}><LogOut size={18} /> Start over</GhostButton>

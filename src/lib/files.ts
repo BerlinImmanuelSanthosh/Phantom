@@ -18,9 +18,42 @@ export async function fileToPayload(file: File): Promise<{ dataUrl: string; medi
   return { dataUrl: c.toDataURL("image/jpeg", 0.85), mediaType: "image/jpeg" };
 }
 
+export type Language = "en" | "ta";
+
+/** The user's language preference (English or Tamil), kept in this browser so it also works offline. */
+export function getLanguage(): Language {
+  try {
+    return localStorage.getItem("phantom-language") === "ta" ? "ta" : "en";
+  } catch {
+    return "en";
+  }
+}
+
+export function setLanguage(lang: Language) {
+  try {
+    localStorage.setItem("phantom-language", lang);
+  } catch {
+    // storage unavailable: the preference just won't persist
+  }
+}
+
+/** Reads a plain-text streaming body, reporting the full text so far after every chunk. */
+async function readTextStream(stream: ReadableStream<Uint8Array>, onChunk: (full: string) => void) {
+  const reader = stream.getReader();
+  const dec = new TextDecoder();
+  let full = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    full += dec.decode(value, { stream: true });
+    onChunk(full);
+  }
+  return full;
+}
+
 export async function streamChat(body: Record<string, unknown>, onChunk: (full: string) => void, signal?: AbortSignal) {
   const { supabase } = await import("@/integrations/supabase/client");
-  const { data } = await supabase.auth.getSession();
+  const language = getLanguage();
 
   // For food mode, try the dedicated foodmaker backend chat endpoint first
   if (body["mode"] === "food") {
@@ -29,6 +62,7 @@ export async function streamChat(body: Record<string, unknown>, onChunk: (full: 
       messages: body["messages"] ?? [],
       ingredients: body["ingredients"] ?? [],
       profile_context: body["profile_context"] ?? "",
+      language,
     };
     for (const baseUrl of backendUrls) {
       try {
@@ -56,26 +90,48 @@ export async function streamChat(body: Record<string, unknown>, onChunk: (full: 
     }
   }
 
-  // Default: all modes (including food fallback) go through TanStack /api/chat
-  const res = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
-    body: JSON.stringify(body),
-    ...(signal ? { signal } : {}),
-  });
-  if (!res.ok || !res.body) {
-    throw new Error(res.status === 402 ? "AI credits have run out for this workspace." : res.status === 429 ? "Too many requests — please wait a moment." : "Phantom couldn't reply right now.");
+  // Default: all modes go through TanStack /api/chat (adds your saved profile; needs the login check).
+  // Skipped when the browser is offline. If it fails, talk to the local backend directly, as food mode does.
+  let stop: Error | null = null;
+  if (typeof navigator === "undefined" || navigator.onLine !== false) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+        body: JSON.stringify({ ...body, language }),
+        ...(signal ? { signal } : {}),
+      });
+      if (res.ok && res.body) return await readTextStream(res.body, onChunk);
+      if (res.status === 402 || res.status === 429) {
+        stop = new Error(res.status === 402 ? "AI credits have run out for this workspace." : "Too many requests — please wait a moment.");
+      }
+    } catch (e) {
+      if (signal?.aborted) throw e;
+    }
+    if (stop) throw stop;
   }
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let full = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    full += dec.decode(value, { stream: true });
-    onChunk(full);
+
+  for (const baseUrl of ["http://127.0.0.1:8000", "http://localhost:8000"]) {
+    try {
+      const res = await fetch(`${baseUrl}/api/chat/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: body["mode"] ?? "health",
+          messages: body["messages"] ?? [],
+          ingredients: body["ingredients"] ?? [],
+          profile_context: body["profile_context"] ?? "",
+          language,
+        }),
+        ...(signal ? { signal } : {}),
+      });
+      if (res.ok && res.body) return await readTextStream(res.body, onChunk);
+    } catch (e) {
+      if (signal?.aborted) throw e;
+    }
   }
-  return full;
+  throw new Error("Phantom couldn't reply right now.");
 }
 
 

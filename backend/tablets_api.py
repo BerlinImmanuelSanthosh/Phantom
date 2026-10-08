@@ -11,6 +11,12 @@ try:
 except ModuleNotFoundError:
     from config import GROQ_MODEL_TABLETS as VISION_MODEL, GROQ_API_KEY_TABLETS
 
+# Offline fallback: reuse the local Ollama helper from chat_api
+try:
+    from backend.chat_api import ollama_stream, OFFLINE_ERROR
+except ModuleNotFoundError:
+    from chat_api import ollama_stream, OFFLINE_ERROR
+
 TEXT_MODEL = VISION_MODEL
 
 router = APIRouter(prefix="/tablets", tags=["Tablets Mode"])
@@ -58,7 +64,10 @@ def scan_prescription(req: ScanPrescriptionRequest):
     Parse prescription text (from OCR) and extract medicines using qwen model.
     Frontend does OCR with Tesseract.js, backend parses with qwen.
     """
-    client = get_groq_client()
+    try:
+        get_groq_client()
+    except HTTPException:
+        pass  # no cloud key: the request falls through to the local Ollama model below
 
     ocr_text = req.ocr_text or ""
     if not ocr_text.strip():
@@ -118,13 +127,23 @@ OCR TEXT:
             "max_tokens": 1200,
         }
 
-        print(f"Sending OCR text to {VISION_MODEL} ({len(ocr_text)} chars)")
-        resp = req_lib.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=60.0)
-        if resp.status_code != 200:
-            print(f"Groq API returned {resp.status_code}: {resp.text}")
-            resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
-        print(f"Groq response: {content[:500]}")
+        offline = False
+        try:
+            print(f"Sending OCR text to {VISION_MODEL} ({len(ocr_text)} chars)")
+            resp = req_lib.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=(5.0, 30.0))
+            if resp.status_code != 200:
+                print(f"Groq API returned {resp.status_code}: {resp.text}")
+                resp.raise_for_status()
+            content = resp.json()["choices"][0]["message"]["content"]
+            print(f"Groq response: {content[:500]}")
+        except Exception as cloud_error:
+            print(f"Groq prescription parse failed ({cloud_error}), trying local Ollama...", flush=True)
+            try:
+                content = "".join(ollama_stream([{"role": "user", "content": prompt}], temperature=0.1, max_tokens=1200, json_mode=True))
+            except Exception as local_error:
+                print(f"Local Ollama prescription parse failed: {local_error}", flush=True)
+                raise HTTPException(status_code=503, detail=OFFLINE_ERROR)
+            offline = True
 
         # Strip out markdown json blocks if groq returned them
         match = re.search(r'\{[\s\S]*\}', content)
@@ -135,6 +154,8 @@ OCR TEXT:
 
         doctor = parsed.get("doctor", "")
         notes = parsed.get("notes", "")
+        if offline:
+            notes = ("Read by the offline AI - please double-check every medicine, dose and time before saving. " + (notes or "")).strip()
         meds_raw = parsed.get("medicines", [])
 
         medicines = []
@@ -151,6 +172,8 @@ OCR TEXT:
 
         print(f"Successfully parsed {len(medicines)} medicine(s)")
         return PrescriptionResponse(doctor=doctor, notes=notes, medicines=medicines)
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Parsing Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to parse prescription: {str(e)}")
